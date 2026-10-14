@@ -10,6 +10,22 @@
 /* Only process C code if we are NOT compiling assembly */
 #ifndef __ASSEMBLER__
 
+/* Solaris System Extensions FIRST */
+#if defined(SOLARIS2_5_1) || defined(SOLARIS2_5) || defined(__sun)
+#  ifndef __EXTENSIONS__
+#    define __EXTENSIONS__ 1
+#  endif
+
+/* include  utmp and utmpx for wtmp accounting */
+#include <utmp.h>
+#include <utmpx.h>
+
+#  ifndef _STRUCTURED_PROC
+#    define _STRUCTURED_PROC 0
+#  endif
+#endif
+
+
 /* Standard feature macro overrides for GNU / POSIX compatibility */
 #ifndef _GNU_SOURCE
 #  define _GNU_SOURCE 1

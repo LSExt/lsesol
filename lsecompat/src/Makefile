@@ -48,7 +48,9 @@ COMMON_SRCS = strtoimax_compat.c \
               strerror_r_compat.c \
               time_compat.c \
               math_compat.c \
-              getline_compat.c
+              getline_compat.c \
+	      vdprintf_compat.c
+
 
 W_SRCS      = mbstowcs_compat.c \
               wcsstr_compat.c 
@@ -126,7 +128,8 @@ HEADERS_LSE    = string_compat.h \
                  unistd_compat.h \
                  atomic_compat.h \
                  getline_compat.h \
-                 ctime_r_compat.h
+                 ctime_r_compat.h \
+		 vdprintf_compat.h
 
 
 # ------------------------------------------------------------------------------

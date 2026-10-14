@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <time.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,12 @@ struct __timezone_type {
     char abbrs[1];
 };
 typedef struct __timezone_type *timezone_t;
+#endif
+
+
+/* Fallback typedef for Y2038 32-bit timestamp compatibility */
+#ifndef time32_t
+typedef int32_t time32_t;
 #endif
 
 /* 
