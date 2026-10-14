@@ -8,6 +8,7 @@ pkgver="$pkgver"
 files(-,root,bin)
 default_docs
 $_bindir/pkgconf
+$_bindir/pkg-config
 $_libdir/libpkgconf.so.*
 $_mandir/man1/pkgconf.1*
 $_mandir/man5/pc.5*

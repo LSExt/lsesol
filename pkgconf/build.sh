@@ -48,6 +48,8 @@ reg install
 install()
 {
     generic_install DESTDIR
+    cd ${stagedir}${prefix}/bin/
+    ln -s pkgconf pkg-config
 }
 
 reg pack
