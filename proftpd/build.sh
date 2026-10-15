@@ -82,6 +82,7 @@ install()
     # prep-config
     ${__mv} ${stagedir}${prefix}/${_sysconfdir}/proftpd.conf ${stagedir}${prefix}/${_sysconfdir}/proftpd.conf.default
     ${__gsed} -i 's|Anonymous ~ftp|Anonymous /usr/local/lse/var/proftpd|'  ${stagedir}${prefix}/${_sysconfdir}/proftpd.conf.default
+    ${__gsed} -i '/IPv6/d' ${stagedir}${prefix}/${_sysconfdir}/proftpd.conf.default
    
 
     # Install initscript

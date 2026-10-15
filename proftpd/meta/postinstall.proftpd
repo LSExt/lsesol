@@ -47,4 +47,19 @@ cd "${ANONFTPDIR}"
 [ -c dev/ticlts ]     || $MKNOD dev/ticlts c 105 2
 [ -c dev/ticots ]     || $MKNOD dev/ticots c 105 0
 
+# Disable standard in.ftpd in /etc/inetd.conf if active
+if $GREP '^ftp' /etc/inetd.conf >/dev/null 2>&1; then
+    echo "Disabling in.ftpd in /etc/inetd.conf..."
+    cp -p /etc/inetd.conf /etc/inetd.conf.pre-proftpd
+    ${PREFIX}/bin/gsed -i 's|^ftp|#ftp|' /etc/inetd.conf 2>/dev/null || \
+        sed 's|^ftp|#ftp|' /etc/inetd.conf > /etc/inetd.conf.tmp && mv /etc/inetd.conf.tmp /etc/inetd.conf
+
+    # Reload inetd on 
+    INETD_PID=`ps -ef | $GREP inetd | $GREP -v grep | awk '{print $2}'`
+    if [ -n "$INETD_PID" ]; then
+        echo "Reloading inetd (PID $INETD_PID)..."
+        kill -HUP $INETD_PID
+    fi
+fi
+
 exit 0

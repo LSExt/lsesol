@@ -11,5 +11,16 @@ if [ -d "${ANONFTPDIR}/dev" ]; then
     rmdir ${ANONFTPDIR}/dev 2>/dev/null || true
 fi
 
+# Re-enable standard in.ftpd in /etc/inetd.conf
+if $GREP '^#ftp' /etc/inetd.conf >/dev/null 2>&1; then
+    echo "Re-enabling standard ftp in /etc/inetd.conf..."
+    sed 's|^#ftp|ftp|' /etc/inetd.conf > /etc/inetd.conf.tmp && mv /etc/inetd.conf.tmp /etc/inetd.conf
+
+    INETD_PID=`ps -ef | $GREP inetd | $GREP -v grep | awk '{print $2}'`
+    if [ -n "$INETD_PID" ]; then
+        kill -HUP $INETD_PID
+    fi
+fi
+
 exit 0
 
