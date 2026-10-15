@@ -1,0 +1,98 @@
+#!/sbin/sh
+#
+# /etc/init.d/proftpd - Init script for ProFTPD on Solaris 2.5.1 (SVR4)
+#
+
+DAEMON="/usr/local/lse/sbin/proftpd"
+CONF="/usr/local/lse/etc/proftpd.conf"
+PIDFILE="/var/run/proftpd.pid"
+
+case "$1" in
+'start')
+   if [ ! -f "$DAEMON" ]; then
+      echo "ProFTPD executable $DAEMON not found."
+      exit 1
+   fi
+
+   if [ ! -f "$CONF" ]; then
+      echo "ProFTPD config $CONF not found."
+      exit 1
+   fi
+
+   # Check if proftpd is already running
+   if [ -f "$PIDFILE" ]; then
+      PID=`cat "$PIDFILE" 2>/dev/null`
+      if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+         echo "ProFTPD is already running (PID $PID)."
+         exit 0
+      fi
+   fi
+
+   echo "Starting ProFTPD daemon..."
+   "$DAEMON" -c "$CONF"
+   ;;
+
+'stop')
+   if [ -f "$PIDFILE" ]; then
+      PID=`cat "$PIDFILE" 2>/dev/null`
+      if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+         echo "Stopping ProFTPD daemon (PID $PID)..."
+         kill -TERM "$PID"
+         rm -f "$PIDFILE"
+         exit 0
+      fi
+   fi
+
+   # Fallback search if PID file is missing
+   PID=`ps -ef | grep "$DAEMON" | grep -v grep | awk '{print $2}'`
+   if [ -n "$PID" ]; then
+      echo "Stopping ProFTPD daemon (PID $PID)..."
+      kill -TERM $PID
+   else
+      echo "ProFTPD is not running."
+   fi
+   ;;
+
+'restart')
+   $0 stop
+   sleep 2
+   $0 start
+   ;;
+
+'reload')
+   if [ -f "$PIDFILE" ]; then
+      PID=`cat "$PIDFILE" 2>/dev/null`
+      if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+         echo "Reloading ProFTPD configuration..."
+         kill -HUP "$PID"
+         exit 0
+      fi
+   fi
+   echo "ProFTPD is not running."
+   exit 1
+   ;;
+
+'status')
+   if [ -f "$PIDFILE" ]; then
+      PID=`cat "$PIDFILE" 2>/dev/null`
+      if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+         echo "ProFTPD is running (PID $PID)."
+         exit 0
+      fi
+   fi
+   echo "ProFTPD is stopped."
+   exit 3
+   ;;
+
+'configtest')
+   echo "Testing ProFTPD configuration..."
+   "$DAEMON" -t -c "$CONF"
+   ;;
+
+*)
+   echo "Usage: $0 {start|stop|restart|reload|status|configtest}"
+   exit 1
+   ;;
+esac
+
+exit 0

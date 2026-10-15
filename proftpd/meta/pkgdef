@@ -5,5 +5,21 @@ pkgcat="application"
 pkgvendor="http://www.proftpd.org/"
 shortdesc="ProFTPD grew out of the desire to have a secure and configurable FTP server, and out of a significant admiration of the Apache web server"
 pkgver="$pkgver"
+files(755,root,sys)
+dir $_sysconfdir
+dir $_sysconfdir/init.d
+dir $_sysconfdir/rc0.d
+dir $_sysconfdir/rc1.d
+dir $_sysconfdir/rc2.d
+dir $_sysconfdir/rcS.d
+${_sysconfdir}/*/*lse_proftpd
+#
 files(-,root,bin)
-*
+$lprefix/$_bindir
+$lprefix/$_sysconfdir
+$lprefix/$_includedir
+$lprefix/$_libdir
+$lprefix/$_sbindir
+$lprefix/$_mandir
+$lprefix/$_sharedir/locale
+default_docs

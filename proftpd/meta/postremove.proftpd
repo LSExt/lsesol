@@ -1,0 +1,15 @@
+EFIX=/usr/local/lse
+ANONFTPDIR=${PREFIX}/var/proftpd
+
+if [ -d "${ANONFTPDIR}/dev" ]; then
+    rm -f ${ANONFTPDIR}/dev/tcp \
+          ${ANONFTPDIR}/dev/udp \
+          ${ANONFTPDIR}/dev/zero \
+          ${ANONFTPDIR}/dev/ticotsord \
+          ${ANONFTPDIR}/dev/ticlts \
+          ${ANONFTPDIR}/dev/ticots
+    rmdir ${ANONFTPDIR}/dev 2>/dev/null || true
+fi
+
+exit 0
+

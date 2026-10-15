@@ -1,44 +1,50 @@
+#!/sbin/sh
+# /var/sadm/pkg/LSEpftpd/install/postinstall
+
 GROUPADD=/usr/sbin/groupadd
 USERADD=/usr/sbin/useradd
 GREP=/usr/bin/grep
 MKDIR=/usr/bin/mkdir
-MKNODE=/usr/sbin/mknode
+MKNOD=/usr/sbin/mknod
 
 PREFIX=/usr/local/lse
 CONFDIR=${PREFIX}/etc
-DESTBIN=${PREFIX}/bin
-ANONFTPDIR=${PREFIX}/
-CHECKCONF=0
-OLDCONF=0
-SSHID=199
+ANONFTPDIR=${PREFIX}/var/proftpd
 
-# We provide default config-files, check and see if they should be installed.
-for config in proftpd_config; do
+$GREP '^ftp:' /etc/group >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "Creating group 'ftp'..."
+    $GROUPADD ftp 2>/dev/null || true
+fi
+
+$GREP '^ftp:' /etc/passwd >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "Creating user 'ftp'..."
+    $USERADD -g ftp -d "${ANONFTPDIR}" -s /bin/false -c "Anonymous FTP" ftp 2>/dev/null || true
+fi
+
+for config in proftpd.conf; do
     if [ ! -f "${CONFDIR}/$config" ] ; then
-	    cp -p ${CONFDIR}/$config.default ${CONFDIR}/$config
-	    echo "Installing new $config"
+        cp -p ${CONFDIR}/$config.default ${CONFDIR}/$config
+        echo "Installing new $config"
     else
-	   echo "Keeping existing $config"
-	   CHECKCONF=1
+        echo "Keeping existing $config"
     fi
 done
 
-# Solaris 2.5.1 users wishing to use ProFTPD will have to do something like
-# the following in their anonymous or otherwise chroot'ed directories:
-# 
-# [ !!NOTE!!  Do not use the major/minor device numbers below verbatim.
-#   Solaris on different archs will use different major/minors.  Check
-#   your OS documentation first before doing this. ]
+# 4. Create dedicated anonymous chroot tree and device nodes
+[ -d "${ANONFTPDIR}" ] || $MKDIR -p "${ANONFTPDIR}"
+[ -d "${ANONFTPDIR}/dev" ] || $MKDIR -p "${ANONFTPDIR}/dev"
+chmod 755 "${ANONFTPDIR}" "${ANONFTPDIR}/dev"
+chown ftp:ftp "${ANONFTPDIR}" 2>/dev/null || true
 
-$MKDIR dev
-$MKNODE dev/tcp c 11 42
-$MKNODE dev/udp c 11 41
-$MKNODE dev/zero c 13 12
-$MKNODE dev/ticotsord c 105 1
+cd "${ANONFTPDIR}"
+[ -c dev/tcp ]        || $MKNOD dev/tcp c 11 42
+[ -c dev/udp ]        || $MKNOD dev/udp c 11 41
+[ -c dev/zero ]       || $MKNOD dev/zero c 13 12
+[ -c dev/ticotsord ]  || $MKNOD dev/ticotsord c 105 1
+# the following are needed in solaris 2.5.1
+[ -c dev/ticlts ]     || $MKNOD dev/ticlts c 105 2
+[ -c dev/ticots ]     || $MKNOD dev/ticots c 105 0
 
-#Solaris 2.5 (and possibly 2.5.1) requires these additional device
-#nodes to be created in order to avoid a system panic when the
-#loopback interface is used:
-
-mknod dev/ticlts c 105 2
-mknod dev/ticots c 105 0
+exit 0
