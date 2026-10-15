@@ -44,6 +44,7 @@
 #include <lse/vterm_compat.h>
 #include <lse/getline_compat.h>
 #include <lse/ctime_r_compat.h>
+#include <lse/vdprintf_compat.h>
 
 #endif /* !__ASSEMBLER__ */
 
