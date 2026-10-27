@@ -182,10 +182,27 @@
  *		- make compiler not complain about 'credits' defined but
  *		  not used;
  * 2026-10-05  V2.3  Luis E. Limon <llimon@github.com>
- *    - Fixed SIGSEGV in vsnprintf caused by unconsumed variadic arguments
- *      and NULL pointer dereferences in %.*f %s format specifiers;
- *    - Expanded test harness to 19 tests covering SPARC stack alignment,
- *      dynamic precision floats, and POSIX/C99 compatibility.
+ *     - Modernized portable-snprintf to full C99/POSIX standards compliance;
+ *     - Added %n specifier support (char count writeback across short/int/long/ll);
+ *     - Added C99 length modifiers %z (size_t) and %t (ptrdiff_t / ssize_t);
+ *     - Added %Lf (long double) quad-precision floating-point formatting;
+ *     - Implemented GNU/POSIX asprintf, vasprintf, asnprintf, and vasnprintf wrappers;
+ *     - Fixed SIGSEGV caused by unconsumed variadic arguments and NULL pointer
+ *       dereferences in %.*f %s format specifiers;
+ *     - Expanded embedded test harness to 19 tests covering SPARC stack alignment,
+ *       dynamic precision floats, and POSIX/C99 compatibility.
+ * 2026-10-27  v2.4  Luis E. Limon <llimon@github.com>
+ *    - Fixed SunOS 4.1.4 (BSD-style sprintf) return value mismatch where
+ *      char* pointers were assigned to size_t length counters (str_arg_l),
+ *      causing compiler warnings and buffer offset corruption (SIGSEGV/SIGBUS);
+ *    - Refactored numeric and float formatting to use standalone sprintf()
+ *      followed by strlen() length calculation for BSD/POSIX portability;
+ *    - Refactored %ll signed/unsigned manual conversion blocks with local offsets
+ *      to prevent mutation of global str_arg_l state during truncation;
+ *    - Implemented custom manual 64-bit integer unpacking loops (llbuf) for %lld,
+ *      %llu, %llx, %llX, and %llo to bypass SunOS 4.1.4 libc sprintf limitations;
+ *    - Added SPARC V7 stack alignment guard for %Lf on SunOS 4.1.4 to prevent
+ *      unaligned 128-bit quad float extraction and libc _doprnt SIGBUS traps;
  */
 
 
@@ -334,6 +351,31 @@
 #include <ctype.h>
 #include <limits.h>
 #include <stddef.h>
+
+#if defined(__sun__) || defined(sun) || defined(__sun)
+   #include <memory.h>
+#endif
+
+/* Standard I/O and String prototypes for SunOS 4.1.4 / C89 */
+extern int fprintf(FILE *stream, const char *format, ...);
+extern int printf(const char *format, ...);
+extern void *memchr(const void *s, int c, size_t n);
+extern char *strchr(const char *s, int c);
+#ifndef va_copy
+# if defined(__va_copy)
+#   define va_copy(d, s) __va_copy((d), (s))
+# elif defined(__builtin_va_copy)
+#   define va_copy(d, s) __builtin_va_copy((d), (s))
+# else
+#   define va_copy(d, s) ((d) = (s))
+# endif
+#endif
+
+
+#ifndef _SSIZE_T
+#define _SSIZE_T
+typedef int ssize_t;
+#endif
 
 #ifdef isdigit
 #undef isdigit
@@ -571,7 +613,7 @@ int portable_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap) {
       const char *q = strchr(p+1,'%');
       size_t n = !q ? strlen(p) : (q-p);
       if (str_l < str_m) {
-        size_t avail = str_m-str_l;
+        size_t avail = (str_m - str_l > 1) ? (str_m - str_l - 1) : 0;
         fast_memcpy(str+str_l, p, (n>avail?avail:n));
       }
       p += n; str_l += n;
@@ -760,20 +802,44 @@ int portable_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap) {
         long double long_double_arg = 0.0L;
         char f[32]; int f_l = 0;
 
+#if defined(__sun__) && !defined(SVR4) && !defined(__SVR4)
+        /* SunOS 4.1.4: Treat 'L' as 64-bit double to preserve SPARC stack frame alignment */
+        if (length_modifier == 'L') {
+          double_arg = (double)va_arg(ap, double);
+        } else {
+          double_arg = va_arg(ap, double);
+        }
+#else 
+       /* POSIX: Native 128-bit long double extraction */
         if (length_modifier == 'L') {
           long_double_arg = va_arg(ap, long double);
         } else {
           double_arg = va_arg(ap, double);
         }
+#endif
 
         f[f_l++] = '%';
-        if (precision_specified) { f_l += sprintf(f + f_l, ".%lu", (unsigned long)precision); }
+        if (precision_specified) { 
+           sprintf(f + f_l, ".%lu", (unsigned long)precision);
+           f_l += (int)strlen(f + f_l);
+        }
+/* dont get here if SunOS4 */
+#if !(defined(__sun__) && !defined(SVR4) && !defined(__SVR4))
         if (length_modifier == 'L') { f[f_l++] = 'L'; }
+#endif
         f[f_l++] = fmt_spec; f[f_l++] = '\0';
 
         str_arg = tmp;
-        if (length_modifier == 'L') str_arg_l = sprintf(tmp, f, long_double_arg);
-        else str_arg_l = sprintf(tmp, f, double_arg);
+#if defined(__sun__) && !defined(SVR4) && !defined(__SVR4)
+        sprintf(tmp, f, double_arg);
+#else
+        if (length_modifier == 'L') {
+          sprintf(tmp, f, long_double_arg);
+        } else {
+          sprintf(tmp, f, double_arg);
+        }
+#endif
+        str_arg_l = strlen(tmp);
         break;
       }
       case 'd': case 'u': case 'o': case 'x': case 'X': case 'p': {
@@ -930,26 +996,94 @@ int portable_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap) {
           else if (length_modifier=='z' || length_modifier=='t') { f[f_l++] = 'l'; }
           else f[f_l++] = length_modifier;
           f[f_l++] = fmt_spec; f[f_l++] = '\0';
-          if (fmt_spec == 'p') str_arg_l += sprintf(tmp+str_arg_l, f, ptr_arg);
-          else if (fmt_spec == 'd') {  /* signed */
+          if (fmt_spec == 'p') {
+            sprintf(tmp + str_arg_l, f, ptr_arg);
+            str_arg_l += strlen(tmp + str_arg_l);
+          } else if (fmt_spec == 'd') {  /* signed */
             switch (length_modifier) {
             case '\0':
-            case 'h': str_arg_l+=sprintf(tmp+str_arg_l, f, int_arg);  break;
-            case 'l': str_arg_l+=sprintf(tmp+str_arg_l, f, long_arg); break;
+            case 'h': 
+              sprintf(tmp + str_arg_l, f, int_arg);
+              str_arg_l += strlen(tmp + str_arg_l);
+              break;
+            case 'l': 
+              sprintf(tmp + str_arg_l, f, long_arg);
+              str_arg_l += strlen(tmp + str_arg_l);
+              break;
             case 'z':
-            case 't': str_arg_l+=sprintf(tmp+str_arg_l, f, long_arg); break;
+            case 't': 
+              sprintf(tmp + str_arg_l, f, long_arg);
+              str_arg_l += strlen(tmp + str_arg_l);
+              break;
 #ifdef SNPRINTF_LONGLONG_SUPPORT
-            case '2': str_arg_l+=sprintf(tmp+str_arg_l,f,long_long_arg); break;
+            case '2': 
+#if defined(__sun__) && !defined(SVR4) && !defined(__SVR4)
+               {
+                char llbuf[64];
+                int lllen = 0;
+                size_t off = 0;
+                unsigned long long uv;
+
+                if (long_long_arg < 0) {
+                  tmp[off++] = '-';
+                  uv = (unsigned long long)(-(long_long_arg + 1)) + 1;
+                } else {
+                  uv = (unsigned long long)long_long_arg;
+                }
+
+                do { llbuf[lllen++] = '0' + (char)(uv % 10); uv /= 10; } while (uv > 0);
+                while (lllen > 0) { tmp[off++] = llbuf[--lllen]; }
+                tmp[off] = '\0';
+
+                str_arg = tmp;
+                str_arg_l = off;
+              }
+#else
+              str_arg_l+=sprintf(tmp+str_arg_l,f,long_long_arg); 
+#endif
+              break;
 #endif
             }
           } else {  /* unsigned */
             switch (length_modifier) {
             case '\0':
-            case 'h': str_arg_l+=sprintf(tmp+str_arg_l, f, uint_arg);  break;
+            case 'h': 
+              sprintf(tmp + str_arg_l, f, uint_arg);
+              str_arg_l += strlen(tmp + str_arg_l);
+              break;
             case 'l': 
-            case 'z': str_arg_l+=sprintf(tmp+str_arg_l, f, ulong_arg); break;
+            case 'z': 
+              sprintf(tmp + str_arg_l, f, ulong_arg);
+              str_arg_l += strlen(tmp + str_arg_l);
+              break;
 #ifdef SNPRINTF_LONGLONG_SUPPORT
-            case '2': str_arg_l+=sprintf(tmp+str_arg_l,f,ulong_long_arg);break;
+            case '2': 
+#if defined(__sun__) && !defined(SVR4) && !defined(__SVR4)
+              {
+                char llbuf[64];
+                int lllen = 0;
+                size_t off = 0;
+                unsigned long long uv = ulong_long_arg;
+
+                if (fmt_spec == 'u') {
+                  do { llbuf[lllen++] = '0' + (char)(uv % 10); uv /= 10; } while (uv > 0);
+                } else if (fmt_spec == 'x' || fmt_spec == 'X') {
+                  const char *digits = (fmt_spec == 'X') ? "0123456789ABCDEF" : "0123456789abcdef";
+                  do { llbuf[lllen++] = digits[uv & 0xF]; uv >>= 4; } while (uv > 0);
+                } else if (fmt_spec == 'o') {
+                  do { llbuf[lllen++] = '0' + (char)(uv & 0x7); uv >>= 3; } while (uv > 0);
+                }
+
+                while (lllen > 0) { tmp[off++] = llbuf[--lllen]; }
+                tmp[off] = '\0';
+
+                str_arg = tmp;
+                str_arg_l = off;
+              }
+#else
+	           str_arg_l+=sprintf(tmp+str_arg_l,f,ulong_long_arg);
+#endif
+	           break;
 #endif
             }
           }
@@ -1022,7 +1156,7 @@ int portable_vsnprintf(char *str, size_t str_m, const char *fmt, va_list ap) {
         int n = min_field_width - (str_arg_l+number_of_zeros_to_pad);
         if (n > 0) {
           if (str_l < str_m) {
-            size_t avail = str_m-str_l;
+            size_t avail = (str_m - str_l > 1) ? (str_m - str_l - 1) : 0;
             fast_memset(str+str_l, (zero_padding?'0':' '), (n>avail?avail:n));
           }
           str_l += n;
