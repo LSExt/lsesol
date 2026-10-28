@@ -24,24 +24,111 @@ struct MemoryBuffer {
     size_t size;
 };
 
-/* Unescape JSON response strings for terminal rendering */
+/* Unescape JSON response strings for SPARC terminal rendering */
 void print_formatted_response(const char *str) {
+    if (!str) return;
+
     size_t len = strlen(str);
     for (size_t i = 0; i < len; i++) {
         if (str[i] == '\\' && i + 1 < len) {
             switch (str[i + 1]) {
-                case 'n': putchar('\n'); i++; break;
-                case 't': putchar('\t'); i++; break;
-                case 'r': i++; break;
-                case '"': putchar('"');  i++; break;
-                case '\\': putchar('\\'); i++; break;
-                default: putchar(str[i]); break;
+                case 'n': 
+                    putchar('\n'); 
+                    i++; 
+                    break;
+                case 'r': 
+                    i++; 
+                    break;
+                case 't': 
+                    putchar('\t'); 
+                    i++; 
+                    break;
+                case '"': 
+                    putchar('"');  
+                    i++; 
+                    break;
+                case '\\': 
+                    putchar('\\'); 
+                    i++; 
+                    break;
+                case 'u':
+                    /* Unescape \u003e ('>') and \u003c ('<') */
+                    if (i + 5 < len) {
+                        if (strncasecmp(&str[i + 2], "003e", 4) == 0) {
+                            putchar('>');
+                            i += 5;
+                            break;
+                        } else if (strncasecmp(&str[i + 2], "003c", 4) == 0) {
+                            putchar('<');
+                            i += 5;
+                            break;
+                        }
+                    }
+                    putchar(str[i]);
+                    break;
+                default: 
+                    putchar(str[i]); 
+                    break;
             }
         } else {
             putchar(str[i]);
         }
     }
     putchar('\n');
+    fflush(stdout);
+}
+
+/* Extract the LAST model text payload from raw Gemini API JSON */
+char *extract_text_field(const char *json_resp) {
+    if (!json_resp) return NULL;
+
+    const char *target = "\"text\"";
+    const char *last_match = NULL;
+    const char *p = json_resp;
+
+    /* Find the last occurrence of key "text" in the response string */
+    while ((p = strstr(p, target)) != NULL) {
+        last_match = p;
+        p += strlen(target);
+    }
+
+    if (!last_match) return NULL;
+
+    /* Move pointer past "text" and find the starting quote of the value string */
+    p = last_match + strlen(target);
+    while (*p && *p != ':') p++;
+    if (*p == ':') p++;
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
+
+    if (*p != '"') return NULL; /* Missing opening quote */
+    p++; /* Move past starting quote */
+
+    const char *start = p;
+
+    /* Scan to closing quote, ignoring escaped quotes (\") */
+    while (*p) {
+        if (*p == '\\') {
+            if (*(p + 1) != '\0') {
+                p += 2;
+                continue;
+            }
+        }
+        if (*p == '"') {
+            break;
+        }
+        p++;
+    }
+
+    if (*p != '"') return NULL;
+
+    size_t len = p - start;
+    char *text = (char *)malloc((len + 1) * sizeof(char));
+    if (!text) return NULL;
+
+    strncpy(text, start, len);
+    text[len] = '\0';
+
+    return text;
 }
 
 /* Collects multi-line buffer until user hits Ctrl+D on a new line */
@@ -171,47 +258,6 @@ char *read_state_file(void) {
     return buf;
 }
 
-/* Extract raw text from Gemini API response JSON without truncating on escaped quotes */
-char *extract_text_field(const char *json_resp) {
-    if (!json_resp) return NULL;
-
-    const char *target = "\"text\": \"";
-    char *start = strstr(json_resp, target);
-    if (!start) return NULL;
-
-    start += strlen(target);
-    
-    /* 
-     * Scan forward to find the true closing quote.
-     * Skip over escaped backslashes (\\) and escaped quotes (\").
-     */
-    const char *p = start;
-    while (*p) {
-        if (*p == '\\') {
-            /* Skip the backslash and the escaped character following it */
-            if (*(p + 1) != '\0') {
-                p += 2;
-                continue;
-            }
-        }
-        if (*p == '"') {
-            /* Unescaped closing quote found */
-            break;
-        }
-        p++;
-    }
-
-    if (*p != '"') return NULL; /* Malformed JSON or truncated buffer */
-
-    size_t len = p - start;
-    char *text = (char *)malloc((len + 1) * sizeof(char));
-    if (!text) return NULL;
-
-    strncpy(text, start, len);
-    text[len] = '\0';
-
-    return text;
-}
 /* Append user prompt and model response into thread JSON state */
 void update_state_file(const char *user_prompt, const char *raw_resp_json) {
     char *state = read_state_file();
@@ -399,12 +445,15 @@ int main(int argc, char **argv) {
         if (response_json) {
             char *text = extract_text_field(response_json);
             if (text) {
-                printf("\nGemini:\n%s\n\n", text);
+                printf("\nGemini:\n");
+                print_formatted_response(text);
+                printf("\n");
                 update_state_file(line, response_json);
                 free(text);
             } else {
-                /*printf("\nRaw Response:\n%s\n\n", response_json);*/
-                print_formatted_response(text);
+                /* Fall back to printing raw response if parsing ever fails */
+                printf("\nGemini (Raw Output):\n");
+                print_formatted_response(response_json);
                 printf("\n");
             }
             free(response_json);
