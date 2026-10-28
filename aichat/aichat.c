@@ -24,60 +24,68 @@ struct MemoryBuffer {
     size_t size;
 };
 
-/* Unescape JSON response strings for SPARC terminal rendering */
+/* Standard 7-bit ASCII renderer for SunOS / Solaris TTY buffers */
 void print_formatted_response(const char *str) {
     if (!str) return;
 
     size_t len = strlen(str);
     for (size_t i = 0; i < len; i++) {
-        if (str[i] == '\\' && i + 1 < len) {
-            switch (str[i + 1]) {
-                case 'n': 
-                    putchar('\n'); 
-                    i++; 
-                    break;
-                case 'r': 
-                    i++; 
-                    break;
-                case 't': 
-                    putchar('\t'); 
-                    i++; 
-                    break;
-                case '"': 
-                    putchar('"');  
-                    i++; 
-                    break;
-                case '\\': 
-                    putchar('\\'); 
-                    i++; 
-                    break;
+        unsigned char c = (unsigned char)str[i];
+
+        /* Handle JSON backslash escapes */
+        if (c == '\\' && i + 1 < len) {
+            char next = str[i + 1];
+            switch (next) {
+                case 'n': putchar('\n'); i++; continue;
+                case 'r': i++; continue;
+                case 't': putchar('\t'); i++; continue;
+                case '"': putchar('"');  i++; continue;
+                case '\\': putchar('\\'); i++; continue;
                 case 'u':
-                    /* Unescape \u003e ('>') and \u003c ('<') */
+                    /* Convert Hex Unicode escapes like \u003e to plain ASCII */
                     if (i + 5 < len) {
-                        if (strncasecmp(&str[i + 2], "003e", 4) == 0) {
-                            putchar('>');
-                            i += 5;
-                            break;
-                        } else if (strncasecmp(&str[i + 2], "003c", 4) == 0) {
-                            putchar('<');
-                            i += 5;
-                            break;
-                        }
+                        if (strncasecmp(&str[i + 2], "003e", 4) == 0) { putchar('>'); i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "003c", 4) == 0) { putchar('<'); i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "0026", 4) == 0) { putchar('&'); i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "0022", 4) == 0) { putchar('"'); i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "0027", 4) == 0) { putchar('\''); i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "2022", 4) == 0) { putchar('*'); i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "2013", 4) == 0 ||
+                            strncasecmp(&str[i + 2], "2014", 4) == 0) { putchar('-'); i += 5; continue; }
                     }
                     putchar(str[i]);
-                    break;
-                default: 
-                    putchar(str[i]); 
-                    break;
+                    continue;
+                default:
+                    putchar(str[i]);
+                    continue;
             }
-        } else {
-            putchar(str[i]);
+        }
+
+        /* Filter high-bit UTF-8 sequences and convert to 7-bit ASCII */
+        if (c >= 0x80) {
+            if (c == 0xE2 && i + 2 < len && (unsigned char)str[i + 1] == 0x80) {
+                unsigned char c3 = (unsigned char)str[i + 2];
+                if (c3 == 0x98 || c3 == 0x99) { putchar('\''); i += 2; continue; }
+                if (c3 == 0x9C || c3 == 0x9D) { putchar('"');  i += 2; continue; }
+                if (c3 == 0x93 || c3 == 0x94) { putchar('-');  i += 2; continue; }
+                if (c3 == 0xA2)             { putchar('*');  i += 2; continue; }
+                if (c3 == 0xA6)             { printf("..."); i += 2; continue; }
+            }
+            if ((c & 0xC0) == 0x80) {
+                continue;
+            }
+            continue;
+        }
+
+        /* Print only valid printable ASCII, newline, and tab */
+        if (c >= 32 || c == '\n' || c == '\t') {
+            putchar(c);
         }
     }
+
     putchar('\n');
     fflush(stdout);
 }
-
 /* Extract the LAST model text payload from raw Gemini API JSON */
 char *extract_text_field(const char *json_resp) {
     if (!json_resp) return NULL;
