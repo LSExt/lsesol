@@ -6,23 +6,16 @@
  *   gcc -std=gnu99 -O2 -o aichat aichat.c -I/usr/local/include -I/usr/local/lse/include -include /usr/local/lse/include/lsecompat.h -L/usr/local/lib -L/usr/local/lse/lib -Wl,-rpath,$prefix/lib -lreadline -lcurses -lcurl -lssl -lcrypto -llsecompat
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <curl/curl.h>
-#include <readline/readline.h>
-#include <readline/history.h>
+#include "aichat.h"
 
-#define STATE_FILE "/tmp/gemini_thread.json"
-#define DEFAULT_MODEL "gemini-2.5-flash"
-#define BUFFER_SIZE 65536
-
-struct MemoryBuffer {
-    char *data;
-    size_t size;
-};
+/* Dynamically resolve state file path from environment or default */
+const char *get_state_file_path(void) {
+    const char *env_path = getenv("GEMINI_STATE_FILE");
+    if (env_path && strlen(env_path) > 0) {
+        return env_path;
+    }
+    return DEFAULT_STATE_FILE;
+}
 
 /* Standard 7-bit ASCII renderer for SunOS / Solaris TTY buffers */
 void print_formatted_response(const char *str) {
@@ -157,7 +150,11 @@ char *read_multiline_prompt(void) {
 
         /* Check for single-line exit/reset commands before submitting */
         if (total_len == 0) {
-            if (strcmp(line, "exit") == 0 || strcmp(line, "quit") == 0 || strcmp(line, "/reset") == 0) {
+            if (strcmp(line, "exit") == 0 || 
+                strcmp(line, "quit") == 0 || 
+                strcmp(line, "/reset") == 0 ||
+                strcmp(line, "/compact") == 0 ||
+                strcmp(line, "/summarize") == 0) {
                 return line;
             }
         }
@@ -233,19 +230,24 @@ char *json_escape(const char *src) {
 
 /* Initialize empty thread state if file does not exist */
 void init_state_file(void) {
-    if (access(STATE_FILE, F_OK) != 0) {
-        FILE *f = fopen(STATE_FILE, "w");
+    const char *path = get_state_file_path();
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        f = fopen(path, "w");
         if (f) {
-            chmod(STATE_FILE, 0600);
-            fputs("{\"contents\":[]}", f);
+            fprintf(f, "{\"contents\":[]}");
             fclose(f);
         }
+    } else {
+        fclose(f);
     }
 }
 
+
 /* Load existing state file into memory buffer */
 char *read_state_file(void) {
-    FILE *f = fopen(STATE_FILE, "r");
+    const char *path = get_state_file_path();
+    FILE *f = fopen(path, "r");
     if (!f) return NULL;
 
     fseek(f, 0, SEEK_END);
@@ -286,7 +288,8 @@ void update_state_file(const char *user_prompt, const char *raw_resp_json) {
     char *model_text = extract_text_field(raw_resp_json);
     char *escaped_model = model_text ? json_escape(model_text) : strdup("No response text.");
 
-    FILE *f = fopen(STATE_FILE, "w");
+   const char *path = get_state_file_path();
+    FILE *f = fopen(path, "r");
     if (f) {
         *insert_pos = '\0';
         fputs(state, f);
@@ -311,12 +314,27 @@ void update_state_file(const char *user_prompt, const char *raw_resp_json) {
 }
 
 /* Perform HTTPS POST request using libcurl */
-char *send_request(const char *endpoint, const char *json_payload) {
+char *send_request(const char *json_payload) {
+    const char *api_key = getenv("GEMINI_API_KEY");
+    const char *model_name = getenv("GEMINI_MODEL");
     CURL *curl;
     CURLcode res;
     struct curl_slist *headers = NULL;
     int retries = 3;
     long http_code = 0;
+
+
+    if (!api_key) {
+        fprintf(stderr, "[Error: GEMINI_API_KEY environment variable is not set]\n");
+        return NULL;
+    }
+
+    /* Build endpoint URL internally */
+    char endpoint[1024];
+    snprintf(endpoint, sizeof(endpoint),
+             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+             model_name, api_key);
+
 
     headers = curl_slist_append(headers, "Content-Type: application/json");
 
@@ -386,14 +404,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    char endpoint[1024];
-    snprintf(endpoint, sizeof(endpoint),
-             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
-             model_name, api_key);
-
     printf("Gemini Terminal Interface (SPARC / libcurl / Readline)\n");
     printf("Active Model: %s\n", model_name);
-    printf("Type 'exit' or 'quit' to end session. Reset thread with '/reset'.\n\n");
+    printf("Type 'exit' or 'quit' to end session. \n" );
+    printf("Reset thread with '/reset'. Summarize thread with '/summarize'.\n\n");
     init_state_file();
 
 
@@ -413,10 +427,17 @@ int main(int argc, char **argv) {
         }
 
         if (strcmp(line, "/reset") == 0) {
-            unlink(STATE_FILE);
+            const char *path = get_state_file_path();
+            unlink(path);
             init_state_file();
-            printf("Conversation history cleared.\n\n");
+            printf("Conversation thread cleared for: %s\n\n", path);
             free(line);
+            continue;
+        }
+        if (strcmp(line, "/compact") == 0|| strcmp(line, "/summarize") == 0 ) {
+            const char *path = get_state_file_path();
+            compact_state_file();
+            printf("Conversation summarized: %s\n\n", path);
             continue;
         }
 
@@ -448,7 +469,7 @@ int main(int argc, char **argv) {
                 current_state, (has_entries ? "," : ""), escaped_prompt ? escaped_prompt : "");
 
         printf("Thinking...\n");
-        char *response_json = send_request(endpoint, full_payload);
+        char *response_json = send_request(full_payload);
 
         if (response_json) {
             char *text = extract_text_field(response_json);
