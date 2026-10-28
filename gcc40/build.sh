@@ -23,11 +23,33 @@ patch[1]=gcc-4.0.4-new-gas.patch
 
 # This compiler is bootstrapped with gcc 3.4.6
 #export PATH=/opt/gnu/gnat/bin:/usr/tgcware/gcc34/bin:/usr/local/bin:$PATH
-export LDFLAGS="-L$prefix/lib -R$prefix/lib"
+export CPPFLAGS="-I/usr/tgcware/include"
+#export LDFLAGS="-static-libgcc -L/usr/tgcware/lib -R/usr/local/lse"
+export LDFLAGS="-static-libgcc -L/usr/tgcware/lib -Wl,-R/usr/local/lse"
 export LIBS="-lgcc_s"
-export SHELL=/usr/tgcware/bin/bash
-
+export SHELL=/usr/local/lse/bin/bash
+export PATH=/usr/tgcware/gcc40/bin:$PATH
+export LD=/usr/ccs/bin/ld
+export DEFAULT_LINKER=/usr/ccs/bin/ld
 echo $gnu_os_ver
+
+export GNATLIBCFLAGS="-g -O2 -fPIC" 
+export PICFLAG_FOR_TARGET="-fPIC" 
+export CFLAGS_FOR_TARGET="-g -O2 -fPIC"
+
+configure_args+=(
+   --with-ld=/usr/ccs/bin/ld
+   --without-gnu-ld
+   --with-nm=/usr/ccs/bin/nm
+   --without-gnu-nm
+   --disable-nls
+   --with-gmp=/usr/local/lse
+   --with-mpfr=/usr/local/lse
+   --with-stage1-ldflags="-static-libgcc $LDFLAGS" 
+   --with-boot-ldflags="-static-libgcc $LDFLAGS"
+   --enable-sjlj-exceptions
+   --disable-decimal-float
+)
 
 
 reg prep

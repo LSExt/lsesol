@@ -109,6 +109,10 @@ lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/unistd.h
 lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/widec.h
 lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/xil
 lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/xmmintrin.h
+lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/root/usr/openwin/include/X11/Xmd.h
+lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/root/usr/openwin/include/X11/Xthreads.h
+lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/sys/ptrace.h
+lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/values.h
 # real gcc includes
 lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/float.h
 lib/$libsubdir/${arch}-${vendor}-solaris*/$version/include/iso646.h
@@ -413,6 +417,7 @@ $iprefix/bin/*fortran
 lib/$libsubdir/${arch}-${vendor}-solaris*/$version/libgfortranbegin.a
 lib/$libsubdir/${arch}-${vendor}-solaris*/$version/libgfortran.*
 libexec/gcc/${arch}-${vendor}-solaris*/$version/f951
+lib/libgfortran.so
 $iprefix/man/?a?1/gfortran.1
 $iprefix/info/gfortran.info*
 
@@ -425,6 +430,7 @@ pkgdesc="Runtime support library for C"
 pkgver="$pkgver"
 files(-,root,bin)
 $_libdir/libgcc_s.so.1*
+lib/libgcc_s.so
 
 [libstdc++6]
 pkgname="${pkgprefix}lstdc6"
@@ -435,6 +441,7 @@ pkgdesc="Runtime support library for C++"
 pkgver="$pkgver"
 files(-,root,bin)
 $_libdir/libstdc++.so.6*
+lib/libstdc++.so
 
 [libobjc1]
 pkgname="${pkgprefix}lobjc1"
@@ -445,6 +452,7 @@ pkgdesc="Runtime support library for Objective-C"
 pkgver="$pkgver"
 files(-,root,bin)
 $_libdir/libobjc.so.1*
+lib/libobjc.so
 
 [libgfortran0]
 pkgname="${pkgprefix}lgfrt0"
