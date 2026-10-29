@@ -17,8 +17,12 @@ source[0]=ftp://ftp.sunet.se/pub/gnu/gzip/$topdir-$version.tar.xz
 
 # Global settings
 export CPPFLAGS="-I$prefix/include"
-export LIBS="-lposix4 -llsecompat"
+export LIBS="-llsecompat"
+export LDFLAGS="$LDFLAGS -static"
+export CFLAGS="$CFLAGS -static"
 ac_overrides="ac_cv_path_shell=/usr/bin/ksh"
+
+#configure_args+=( --enable-static-link --without-bash-malloc )
 
 reg prep
 prep()
