@@ -14,6 +14,7 @@
 #include <Xm/PushB.h>
 #include <Xm/Text.h>
 #include <Xm/Label.h>
+#include <Xm/SelectioB.h>
 
 /* Global widget handles needed for backend hooks */
 static Widget output_text_w;
@@ -22,6 +23,55 @@ static Widget conv_menu_w;
 static Widget conv_pane_w;      /* <-- ADD THIS */
 static Widget model_menu_w;
 static Widget toplevel_w;
+/* Forward declaration so new_chat_ok_cb can reference it */
+static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data);
+
+
+/* Callback: When user clicks "OK" in the New Chat Dialog */
+static void new_chat_ok_cb(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    XmSelectionBoxCallbackStruct *cbs = (XmSelectionBoxCallbackStruct *)call_data;
+    char *chat_name = NULL;
+    Widget new_item;
+    Arg args[5];
+    int n;
+
+    /* Extract C string from Motif XmString */
+    if (XmStringGetLtoR(cbs->value, XmFONTLIST_DEFAULT_TAG, &chat_name)) {
+        if (chat_name && strlen(chat_name) > 0) {
+            /* 1. Create a persistent heap copy for client_data callback */
+            char *saved_name = strdup(chat_name);
+
+            /* 2. Dynamically add new push button to the dropdown menu pane */
+            n = 0;
+            new_item = XmCreatePushButton(conv_pane_w, saved_name, args, n);
+            XtManageChild(new_item);
+            
+            /* Hook existing selection callback */
+            XtAddCallback(new_item, XmNactivateCallback, conv_select_cb, (XtPointer)saved_name);
+
+            /* 3. Update OptionMenu to display the newly created chat */
+            n = 0;
+            XtSetArg(args[n], XmNmenuHistory, new_item); n++;
+            XtSetValues(conv_menu_w, args, n);
+
+            /* 4. Trigger backend logic (optional: clear output buffer for fresh chat) */
+            printf("Created and switched to conversation: %s\n", chat_name);
+            XmTextSetString(output_text_w, "--- New Conversation Started ---\n");
+        }
+        XtFree(chat_name);
+    }
+
+    /* Destroy the prompt dialog */
+    XtDestroyWidget(w);
+}
+
+/* Callback: When user clicks "Cancel" in the New Chat Dialog */
+static void new_chat_cancel_cb(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    XtDestroyWidget(w);
+}
+
 
 /* Callback: Send Button Pressed */
 static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
@@ -49,11 +99,33 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
     }
 }
 
-/* Callback: New Conversation Button */
+/* Callback: New Conversation Button (Opens Modal Prompt Dialog) */
 static void new_conv_cb(Widget w, XtPointer client_data, XtPointer call_data)
 {
-    /* TODO: Hook to create a new thread in your backend */
-    printf("Create New Thread triggered\n");
+    Widget dialog;
+    Arg args[10];
+    int n = 0;
+    XmString title_str = XmStringCreateLocalized("New Conversation");
+    XmString prompt_str = XmStringCreateLocalized("Enter Conversation Name:");
+
+    XtSetArg(args[n], XmNdialogTitle, title_str); n++;
+    XtSetArg(args[n], XmNselectionLabelString, prompt_str); n++;
+    XtSetArg(args[n], XmNautoUnmanage, False); n++; /* We handle destruction manually */
+    
+    dialog = XmCreatePromptDialog(toplevel_w, "newChatDialog", args, n);
+
+    XmStringFree(title_str);
+    XmStringFree(prompt_str);
+
+    /* Unmanage the "Help" button common to Motif dialogs */
+    XtUnmanageChild(XmSelectionBoxGetChild(dialog, XmDIALOG_HELP_BUTTON));
+
+    /* Hook OK and Cancel actions */
+    XtAddCallback(dialog, XmNokCallback, new_chat_ok_cb, NULL);
+    XtAddCallback(dialog, XmNcancelCallback, new_chat_cancel_cb, NULL);
+
+    /* Show Dialog */
+    XtManageChild(dialog);
 }
 
 /* Callback: Model Selected */
@@ -89,6 +161,7 @@ int main(int argc, char *argv[])
         NULL, 
         NULL
     );
+    toplevel_w = toplevel;
 
     /* Main Window Shell */
     n = 0;
@@ -118,6 +191,7 @@ int main(int argc, char *argv[])
 
     /* Thread Dropdown (OptionMenu) */
     conv_pane = XmCreatePulldownMenu(top_bar, "convPane", NULL, 0);
+    conv_pane_w = conv_pane;
     btn_sample_chat = XmCreatePushButton(conv_pane, "sample chat", NULL, 0);
     XtManageChild(btn_sample_chat);
     XtAddCallback(btn_sample_chat, XmNactivateCallback, conv_select_cb, (XtPointer)"sample chat");
