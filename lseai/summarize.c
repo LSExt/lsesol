@@ -1,4 +1,4 @@
-#include "aichat.h"
+#include "lseai.h"
 
 /* Option A: Summarize and compact thread history into a baseline context block */
 void compact_state_file(void) {

@@ -1,12 +1,19 @@
 /*
- * aichat.c - Readline CLI for Gemini API with thread persistence
+ * lseai.c - Readline CLI for Gemini API with thread persistence
  * Designed for SunOS 4.1.4 / Solaris 2.5.1 on SPARC
  *
  * Compile:
- *   gcc -std=gnu99 -O2 -o aichat aichat.c -I/usr/local/include -I/usr/local/lse/include -include /usr/local/lse/include/lsecompat.h -L/usr/local/lib -L/usr/local/lse/lib -Wl,-rpath,$prefix/lib -lreadline -lcurses -lcurl -lssl -lcrypto -llsecompat
+ *   gcc -std=gnu99 -O2 -o lseai lseai.c -I/usr/local/include -I/usr/local/lse/include -include /usr/local/lse/include/lsecompat.h -L/usr/local/lib -L/usr/local/lse/lib -Wl,-rpath,$prefix/lib -lreadline -lcurses -lcurl -lssl -lcrypto -llsecompat
  */
 
-#include "aichat.h"
+#include "lseai.h"
+
+/* Set the terminal title when supported */
+void set_terminal_title( const char *title){
+    if (!title) return;
+    printf("\033k%s\033\\", title);
+    fflush(stdout);
+}
 
 /* Dynamically resolve state file path from environment or default */
 const char *get_state_file_path(void) {
@@ -133,11 +140,12 @@ char *extract_text_field(const char *json_resp) {
 }
 
 /* Collects multi-line buffer until user hits Ctrl+D on a new line */
-char *read_multiline_prompt(void) {
+char *read_multiline_prompt(const char *title) {
     char *full_buffer = NULL;
     size_t total_len = 0;
-
-    printf("sparc-gemini> (Paste text, press Ctrl+D on a new line to submit)\n");
+    
+    printf("conversation: %s\n", title );
+    printf("lseai> (Paste text, press Ctrl+D on a new line to submit)\n");
 
     while (1) {
         char *line = readline("... ");
@@ -269,8 +277,7 @@ char *read_state_file(void) {
 }
 
 /* Append user prompt and model response into thread JSON state */
-void update_state_file(const char *user_prompt, const char *raw_resp_json) {
-    char *state = read_state_file();
+void update_state_file(const char *user_prompt, const char *raw_resp_json) { char *state = read_state_file();
     if (!state) return;
 
     /* Locate position right before ending contents array `]}` */
@@ -289,7 +296,7 @@ void update_state_file(const char *user_prompt, const char *raw_resp_json) {
     char *escaped_model = model_text ? json_escape(model_text) : strdup("No response text.");
 
    const char *path = get_state_file_path();
-    FILE *f = fopen(path, "r");
+    FILE *f = fopen(path, "w");
     if (f) {
         *insert_pos = '\0';
         fputs(state, f);
@@ -393,10 +400,13 @@ char *send_request(const char *json_payload) {
 int main(int argc, char **argv) {
     const char *api_key = getenv("GEMINI_API_KEY");
     const char *model_name = getenv("GEMINI_MODEL");
+    const char *state_file = get_state_file_path();
 
     if (!model_name) {
         model_name = DEFAULT_MODEL;
     }
+
+    set_terminal_title( state_file );
 
     if (!api_key) {
         fprintf(stderr, "Error: GEMINI_API_KEY environment variable not set.\n");
@@ -406,14 +416,14 @@ int main(int argc, char **argv) {
 
     printf("Gemini Terminal Interface (SPARC / libcurl / Readline)\n");
     printf("Active Model: %s\n", model_name);
+    printf("Conversation Thread: %s\n", state_file);
     printf("Type 'exit' or 'quit' to end session. \n" );
     printf("Reset thread with '/reset'. Summarize thread with '/summarize'.\n\n");
     init_state_file();
 
 
     char *line;
-    /*while ((line = readline("sparc-gemini> ")) != NULL) {*/
-    while ((line = read_multiline_prompt()) != NULL) {
+    while ((line = read_multiline_prompt(state_file)) != NULL) {
         if (strlen(line) == 0) {
             free(line);
             continue;
