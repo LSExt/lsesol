@@ -26,5 +26,7 @@ char *send_request(const char *json_payload);
 char *extract_text_field(const char *json_resp);
 void print_formatted_response(const char *str);
 void compact_state_file(void);
+char *read_multiline_prompt(const char *title);
+
 
 #endif /* LSEAI_H */
