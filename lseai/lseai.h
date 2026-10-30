@@ -1,5 +1,5 @@
-#ifndef AICHAT_H
-#define AICHAT_H
+#ifndef LSEAI_H
+#define LSEAI_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,4 +27,4 @@ char *extract_text_field(const char *json_resp);
 void print_formatted_response(const char *str);
 void compact_state_file(void);
 
-#endif /* AICHAT_H */
+#endif /* LSEAI_H */
