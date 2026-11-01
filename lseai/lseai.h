@@ -21,10 +21,10 @@ struct MemoryBuffer {
 
 /* json */
 char *json_escape(const char *src);
+char *extract_text_field(const char *json_resp);
 
 /* Prototypes */
 const char *get_state_file_path(void);
-char *send_request(const char *json_payload);
 char *extract_text_field(const char *json_resp);
 void print_formatted_response(const char *str);
 void compact_state_file(void);
@@ -34,6 +34,10 @@ void init_state_file(void);
 char *read_state_file(void);
 const char *get_state_file_path(void);
 void update_state_file(const char *user_prompt, const char *raw_resp_json);
+
+/* Request */
+char *send_request(const char *json_payload);
+
 
 
 #endif /* LSEAI_H */
