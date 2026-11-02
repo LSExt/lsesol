@@ -11,7 +11,7 @@
 #include <readline/history.h>
 
 #define DEFAULT_STATE_FILE "/tmp/gemini_thread.json"
-#define DEFAULT_MODEL "gemini-2.5-flash"
+#define DEFAULT_MODEL "gemini-3.8-flash"
 #define BUFFER_SIZE 65536
 
 struct MemoryBuffer {
@@ -26,7 +26,6 @@ char *extract_text_field(const char *json_resp);
 /* Prototypes */
 const char *get_state_file_path(void);
 char *extract_text_field(const char *json_resp);
-void print_formatted_response(const char *str);
 void compact_state_file(void);
 char *read_multiline_prompt(const char *title);
 /* state file */
@@ -38,6 +37,13 @@ void update_state_file(const char *user_prompt, const char *raw_resp_json);
 /* Request */
 char *send_request(const char *json_payload);
 
+/* Response */
+char *clean_to_ascii_string(const char *input);
+void print_formatted_response(const char *str);
+
+#define PROMPT_HEADER   "\n=== [ You ] ====================================================\n"
+#define RESPONSE_HEADER "\n--- [ Gemini ] -------------------------------------------------\n"
+#define TURN_DIVIDER    "\n================================================================\n\n"
 
 
 #endif /* LSEAI_H */

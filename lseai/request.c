@@ -47,10 +47,15 @@ char *send_request(const char *json_payload) {
 
     while (retries > 0) {
         struct MemoryBuffer chunk = { (char *)malloc(1), 0 };
-        if (!chunk.data) return NULL;
+        if (!chunk.data){
+            fprintf( stderr, "Failed to malloc(1)\n" );
+            return NULL;
+        }
+
 
         curl = curl_easy_init();
         if (!curl) {
+            fprintf( stderr, "failed curl_easy_init()\n" );
             free(chunk.data);
             return NULL;
         }
@@ -68,6 +73,7 @@ char *send_request(const char *json_payload) {
         if (res == CURLE_OK && http_code == 200) {
             curl_easy_cleanup(curl);
             curl_slist_free_all(headers);
+            fprintf( stderr, "Success http_code =200 chunk.data: %s \n", chunk.data);
             return chunk.data;
         }
 
@@ -84,6 +90,7 @@ char *send_request(const char *json_payload) {
             /* Non-200 HTTP code (e.g., 404, 429) - return raw JSON payload for inspection */
             curl_easy_cleanup(curl);
             curl_slist_free_all(headers);
+            fprintf( stderr, "Non-200 return return %li chunk.data %s\n", http_code, chunk.data );
             return chunk.data;
         }
 
@@ -93,6 +100,7 @@ char *send_request(const char *json_payload) {
     }
 
     curl_slist_free_all(headers);
+    fprintf( stderr, "unable to obtain success response\n");
     return NULL;
 }
 

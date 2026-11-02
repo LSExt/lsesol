@@ -5,6 +5,7 @@
  * gcc -O2 gemini_motif.c -o gemini_motif  -I/usr/dt/include -I/usr/openwin/include -L/usr/dt/lib -R/usr/dt/lib -L/usr/openwin/lib -R/usr/openwin/lib -lXm -lXt -lX11 -lsocket -lnsl 
  */
 
+#include "lseai.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <Xm/Xm.h>
@@ -39,10 +40,10 @@ static void new_chat_ok_cb(Widget w, XtPointer client_data, XtPointer call_data)
     /* Extract C string from Motif XmString */
     if (XmStringGetLtoR(cbs->value, XmFONTLIST_DEFAULT_TAG, &chat_name)) {
         if (chat_name && strlen(chat_name) > 0) {
-            /* 1. Create a persistent heap copy for client_data callback */
+            /* Create a persistent heap copy for client_data callback */
             char *saved_name = strdup(chat_name);
 
-            /* 2. Dynamically add new push button to the dropdown menu pane */
+            /* Dynamically add new push button to the dropdown menu pane */
             n = 0;
             new_item = XmCreatePushButton(conv_pane_w, saved_name, args, n);
             XtManageChild(new_item);
@@ -50,12 +51,12 @@ static void new_chat_ok_cb(Widget w, XtPointer client_data, XtPointer call_data)
             /* Hook existing selection callback */
             XtAddCallback(new_item, XmNactivateCallback, conv_select_cb, (XtPointer)saved_name);
 
-            /* 3. Update OptionMenu to display the newly created chat */
+            /* Update OptionMenu to display the newly created chat */
             n = 0;
             XtSetArg(args[n], XmNmenuHistory, new_item); n++;
             XtSetValues(conv_menu_w, args, n);
 
-            /* 4. Trigger backend logic (optional: clear output buffer for fresh chat) */
+            /* Trigger backend logic (optional: clear output buffer for fresh chat) */
             printf("Created and switched to conversation: %s\n", chat_name);
             XmTextSetString(output_text_w, "--- New Conversation Started ---\n");
         }
@@ -83,10 +84,84 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
          * TODO: Plug in your Gemini API call here.
          * For now, append what the user typed to the output area.
          */
-        XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), "\n\nUser: ");
+        XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), PROMPT_HEADER);
         XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), prompt);
-        XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), "\nGemini: [Waiting for API integration...]");
+
+         
+        /* Load thread state and insert current prompt */
+        char *current_state = read_state_file();
+        if (!current_state) {
+           if (prompt) {
+               XtFree(prompt);
+           }
+            return;
+        }
+
+        char *insert_pos = strrchr(current_state, ']');
+        if (insert_pos) *insert_pos = '\0';
+
+        int has_entries = (strstr(current_state, "\"role\"") != NULL);
+        char *escaped_prompt = json_escape(prompt);
+        fprintf( stderr, "escaped_prompt : %s\n", escaped_prompt );
+
+        /* Construct full JSON payload with complete history */
+        size_t payload_size = strlen(current_state) + (escaped_prompt ? strlen(escaped_prompt) : 0) + 512;
+        char *full_payload = (char *)malloc(payload_size * sizeof(char));
+        if (!full_payload) {
+            fprintf(stderr, "Memory allocation failed for payload.\n");
+            free(current_state);
+            if (escaped_prompt) free(escaped_prompt);
+            if (prompt) {
+                XtFree(prompt);
+            }
+            return;
+        }
+
+        sprintf(full_payload, "%s%s{\"role\":\"user\",\"parts\":[{\"text\":\"%s\"}]}]}",
+                current_state, (has_entries ? "," : ""), escaped_prompt ? escaped_prompt : "");
+
+        fprintf( stderr, "reuqest full_payload %s\n", full_payload );
+
+
+        printf("Thinking...\n");
+        char *response_json = send_request(full_payload);
+        fprintf( stderr, "request response_json %s\n", response_json);
+
+
+        if (response_json) {
+            char *text = extract_text_field(response_json);
+            if (text) {
+
+                char *ascii_text = clean_to_ascii_string(text);
+                if (ascii_text) {
+                    /* Insert into output scrolled text widget */
+
+                    XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), RESPONSE_HEADER);
+                    XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), ascii_text );
+                    XmTextShowPosition(output_text_w, XmTextGetLastPosition(output_text_w));
+                    
+                    /* Clean up heap */
+                    free(ascii_text);
+                }
+                
+                update_state_file(prompt, response_json);
+                free(text);
+            } else {
+                /* Fall back to printing raw response if parsing ever fails */
+                printf("\nGemini (Raw Output):\n");
+                /*print_formatted_response(response_json);*/
+                printf(response_json);
+                printf("\n");
+            }
+            free(response_json);
+        }
+
+        free(current_state);
+        if (escaped_prompt) free(escaped_prompt);
+        free(full_payload);
+
         
+        XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), TURN_DIVIDER );
         /* Scroll to bottom */
         XmTextShowPosition(output_text_w, XmTextGetLastPosition(output_text_w));
         
@@ -169,6 +244,7 @@ int main(int argc, char *argv[])
     XtSetArg(args[n], XmNwidth, 700); n++;
     XtSetArg(args[n], XmNheight, 550); n++;
     XtSetValues(toplevel, args, n);
+
 
     main_window = XmCreateMainWindow(toplevel, "mainWindow", NULL, 0);
     XtManageChild(main_window);
@@ -259,6 +335,9 @@ int main(int argc, char *argv[])
     XtSetArg(args[n], XmNcursorPositionVisible, False); n++;
     XtSetArg(args[n], XmNeditMode, XmMULTI_LINE_EDIT); n++;
     XtSetArg(args[n], XmNwordWrap, True); n++;
+
+    XtSetArg(args[n], XmNscrollHorizontal, False); n++;   
+
     output_text_w = XmCreateScrolledText(form, "outputText", args, n);
     XtManageChild(output_text_w);
 
