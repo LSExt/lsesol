@@ -6,19 +6,18 @@
  * so XmText widgets render line breaks properly.
  * NOTE: The caller is responsible for calling free() on the returned string.
  */
-char *clean_to_ascii_string(const char *input)
+char *clean_to_ascii_string(const char *str)
 {
     size_t in_len;
     size_t out_cap;
     size_t out_idx = 0;
-    size_t i;
     char *out;
 
-    if (!input) {
+    if (!str) {
         return NULL;
     }
 
-    in_len = strlen(input);
+    in_len = strlen(str);
 
     /* Allocate buffer with room for expansion */
     out_cap = (in_len * 2) + 32;
@@ -27,62 +26,62 @@ char *clean_to_ascii_string(const char *input)
         return NULL;
     }
 
-    for (i = 0; i < in_len; i++) {
-        unsigned char c = (unsigned char)input[i];
 
-        /* --- 1. Handle JSON Escape Sequences (\n, \r, \t, \", \\) --- */
-        if (c == '\\' && (i + 1 < in_len)) {
-            char next = input[i + 1];
-            if (next == 'n') {
-                out[out_idx++] = '\n'; /* Actual ASCII 10 (Line Feed) */
-                i++;
-                continue;
-            } else if (next == 'r') {
-                /* Skip carriage returns for Motif text widgets */
-                i++;
-                continue;
-            } else if (next == 't') {
-                out[out_idx++] = '\t';
-                i++;
-                continue;
-            } else if (next == '"') {
-                out[out_idx++] = '"';
-                i++;
-                continue;
-            } else if (next == '\\') {
-                out[out_idx++] = '\\';
-                i++;
-                continue;
+
+
+    size_t len = strlen(str);
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)str[i];
+
+        /* Handle JSON backslash escapes */
+        if (c == '\\' && i + 1 < len) {
+            char next = str[i + 1];
+            switch (next) {
+                case 'n': out[out_idx++] = '\n'; i++; continue;
+                case 'r': i++; continue;
+                case 't': out[out_idx++] = '\t'; i++; continue;
+                case '"': out[out_idx++] = '"';  i++; continue;
+                case '\\': putchar('\\'); i++; continue;
+                case 'u':
+                    /* Convert Hex Unicode escapes like \u003e to plain ASCII */
+                    if (i + 5 < len) {
+                        if (strncasecmp(&str[i + 2], "003e", 4) == 0) { out[out_idx++] ='>'; i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "003c", 4) == 0) { out[out_idx++] ='<'; i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "0026", 4) == 0) { out[out_idx++] ='&'; i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "0022", 4) == 0) { out[out_idx++] ='"'; i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "0027", 4) == 0) { out[out_idx++] ='\''; i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "2022", 4) == 0) { out[out_idx++] ='*'; i += 5; continue; }
+                        if (strncasecmp(&str[i + 2], "2013", 4) == 0 ||
+                            strncasecmp(&str[i + 2], "2014", 4) == 0) { out[out_idx++] ='-'; i += 5; continue; }
+                    }
+                    out[out_idx++] = str[i];
+                    continue;
+                default:
+                    out[out_idx++] = str[i];
+                    continue;
             }
         }
 
-        /* --- 2. Multi-byte UTF-8 handling --- */
+
+        /* Filter high-bit UTF-8 sequences and convert to 7-bit ASCII */
         if (c >= 0x80) {
-            /* Check 3-byte sequences (0xE0 - 0xEF) */
-            if (c >= 0xE0 && c <= 0xEF && (i + 2 < in_len)) {
-                unsigned char c2 = (unsigned char)input[i + 1];
-                unsigned char c3 = (unsigned char)input[i + 2];
-
-                /* Ellipsis: UTF-8 0xE2 0x80 0xA6 -> ASCII "..." */
-                if (c == 0xE2 && c2 == 0x80 && c3 == 0xA6) {
-                    out[out_idx++] = '.';
-                    out[out_idx++] = '.';
-                    out[out_idx++] = '.';
-                    i += 2;
-                    continue;
-                }
+            if (c == 0xE2 && i + 2 < len && (unsigned char)str[i + 1] == 0x80) {
+                unsigned char c3 = (unsigned char)str[i + 2];
+                if (c3 == 0x98 || c3 == 0x99) { out[out_idx++] ='\''; i += 2; continue; }
+                if (c3 == 0x9C || c3 == 0x9D) { out[out_idx++] ='"';  i += 2; continue; }
+                if (c3 == 0x93 || c3 == 0x94) { out[out_idx++] ='-';  i += 2; continue; }
+                if (c3 == 0xA2)             { out[out_idx++] = '*';  i += 2; continue; }
+                if (c3 == 0xA6)             { printf("..."); i += 2; continue; }
             }
-
-            /* Skip remaining continuation bytes */
             if ((c & 0xC0) == 0x80) {
                 continue;
             }
             continue;
         }
 
-        /* --- 3. Keep valid printable ASCII, newline, and tab --- */
+        /* Print only valid printable ASCII, newline, and tab */
         if (c >= 32 || c == '\n' || c == '\t') {
-            out[out_idx++] = (char)c;
+            out[out_idx++] = c;
         }
     }
 

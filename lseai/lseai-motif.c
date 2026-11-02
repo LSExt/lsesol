@@ -16,6 +16,8 @@
 #include <Xm/Text.h>
 #include <Xm/Label.h>
 #include <Xm/SelectioB.h>
+#include <Xm/Separator.h>
+
 
 /* Global widget handles needed for backend hooks */
 static Widget output_text_w;
@@ -71,6 +73,22 @@ static void new_chat_ok_cb(Widget w, XtPointer client_data, XtPointer call_data)
 static void new_chat_cancel_cb(Widget w, XtPointer client_data, XtPointer call_data)
 {
     XtDestroyWidget(w);
+}
+
+
+/* Helper to allocate an X11 color from name or hex string */
+static Pixel get_pixel_color(Widget w, const char *color_name)
+{
+    XrmValue from, to;
+    from.addr = (char *)color_name;
+    from.size = strlen(color_name) + 1;
+    to.addr = NULL;
+    to.size = 0;
+
+    if (XtConvertAndStore(w, XtRString, &from, XtRPixel, &to)) {
+        return *(Pixel *)to.addr;
+    }
+    return BlackPixelOfScreen(XtScreen(w));
 }
 
 
@@ -162,6 +180,8 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
 
         
         XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), TURN_DIVIDER );
+
+
         /* Scroll to bottom */
         XmTextShowPosition(output_text_w, XmTextGetLastPosition(output_text_w));
         
