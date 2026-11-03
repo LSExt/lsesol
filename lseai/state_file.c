@@ -1,10 +1,15 @@
 #include "lseai.h"
+#include "globals.h"
 
 /* Dynamically resolve state file path from environment or default */
 const char *get_state_file_path(void) {
-    const char *env_path = getenv("GEMINI_STATE_FILE");
-    if (env_path && strlen(env_path) > 0) {
-        return env_path;
+/*    const char *env_path = getenv("GEMINI_STATE_FILE");*/
+    /* const char *env_path =   g_current_conversation; */
+/*    if (env_path && strlen(env_path) > 0) {
+*/
+    if (g_current_conversation && strlen(g_current_conversation) > 0) {
+        fprintf( stderr, "current conversation %s\n", g_current_conversation);
+        return g_current_conversation;
     }
     return DEFAULT_STATE_FILE;
 }    

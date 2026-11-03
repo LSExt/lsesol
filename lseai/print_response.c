@@ -100,7 +100,9 @@ void print_formatted_response(const char *str)
 
     cleaned = clean_to_ascii_string(str);
     if (cleaned) {
-        fputs(cleaned, stdout);
+        /* Format Markdown headers, bullets, and code boxes */
+        char *formatted = format_markdown_to_ascii(cleaned); 
+        fputs(formatted, stdout);
         putchar('\n');
         fflush(stdout);
         free(cleaned);

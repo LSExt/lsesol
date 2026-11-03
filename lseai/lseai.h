@@ -11,7 +11,7 @@
 #include <curl/curl.h>
 #include <readline/readline.h>
 #include <readline/history.h>
-
+#include "config.h"
 #define DEFAULT_STATE_FILE "/tmp/gemini_thread.json"
 #define DEFAULT_MODEL "gemini-3.8-flash"
 #define BUFFER_SIZE 65536
@@ -43,6 +43,7 @@ char *send_request(const char *json_payload);
 /* Response */
 char *clean_to_ascii_string(const char *input);
 void print_formatted_response(const char *str);
+
 
 #define PROMPT_HEADER "\n################################################################\n"  \
 "###  YOU                                                      ###\n" \

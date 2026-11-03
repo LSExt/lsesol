@@ -17,15 +17,19 @@
 #include <Xm/Label.h>
 #include <Xm/SelectioB.h>
 #include <Xm/Separator.h>
+#include "config.h"
+#include "globals.h"
 
 
 /* Global widget handles needed for backend hooks */
 static Widget output_text_w;
 static Widget input_text_w;
 static Widget conv_menu_w;
-static Widget conv_pane_w;      /* <-- ADD THIS */
+static Widget conv_pane_w;
 static Widget model_menu_w;
 static Widget toplevel_w;
+
+
 /* Forward declaration so new_chat_ok_cb can reference it */
 static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data);
 
@@ -61,6 +65,17 @@ static void new_chat_ok_cb(Widget w, XtPointer client_data, XtPointer call_data)
             /* Trigger backend logic (optional: clear output buffer for fresh chat) */
             printf("Created and switched to conversation: %s\n", chat_name);
             XmTextSetString(output_text_w, "--- New Conversation Started ---\n");
+
+            /* Format full path into g_current_conversation */
+            snprintf(g_current_conversation, sizeof(g_current_conversation),
+                     "%s/%s.gemini.json", g_config.state_dir, chat_name);
+
+            /* Initialize empty conversation state file on disk */
+            init_state_file();
+
+            /* Reset turn counter for fresh conversation */
+            g_turn_count = 0;
+            
         }
         XtFree(chat_name);
     }
@@ -120,7 +135,6 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
 
         int has_entries = (strstr(current_state, "\"role\"") != NULL);
         char *escaped_prompt = json_escape(prompt);
-        fprintf( stderr, "escaped_prompt : %s\n", escaped_prompt );
 
         /* Construct full JSON payload with complete history */
         size_t payload_size = strlen(current_state) + (escaped_prompt ? strlen(escaped_prompt) : 0) + 512;
@@ -138,12 +152,10 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
         sprintf(full_payload, "%s%s{\"role\":\"user\",\"parts\":[{\"text\":\"%s\"}]}]}",
                 current_state, (has_entries ? "," : ""), escaped_prompt ? escaped_prompt : "");
 
-        fprintf( stderr, "reuqest full_payload %s\n", full_payload );
 
 
         printf("Thinking...\n");
         char *response_json = send_request(full_payload);
-        fprintf( stderr, "request response_json %s\n", response_json);
 
 
         if (response_json) {
@@ -238,6 +250,19 @@ static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
 {
     char *conv_name = (char *)client_data;
     printf("Selected Context: %s\n", conv_name);
+    char *chat_name = (char *)client_data;
+    if (!chat_name) return;
+
+    /* Update global path */
+    snprintf(g_current_conversation, sizeof(g_current_conversation),
+             "%s/%s.gemini.json", g_config.state_dir, chat_name);
+
+    printf("Switched conversation to: %s (%s)\n", chat_name, g_current_conversation);
+
+    /* Clear or reload output text area */
+    XmTextSetString(output_text_w, "--- Switched Conversation ---\n");
+
+    /* TODO: Call backend helper to reload previous messages from this file into output_text_w */
 }
 
 int main(int argc, char *argv[])
@@ -249,6 +274,28 @@ int main(int argc, char *argv[])
     Widget send_btn;
     Arg args[20];
     int n;
+
+    config_load(NULL);
+    strncpy(g_current_model, g_config.default_model, sizeof(g_current_model) - 1);
+    g_current_model[sizeof(g_current_model) - 1] = '\0';
+
+    int conv_count = 0;
+    char **conversation_list = config_list_conversations(&conv_count);
+
+    if (conversation_list && conv_count > 0) {
+        /* Safely copy the first chat name into our global array */
+        strncpy(g_current_conversation, conversation_list[0], sizeof(g_current_conversation) - 1);
+        g_current_conversation[sizeof(g_current_conversation) - 1] = '\0';
+    } else {
+        /* Default fallback if no conversations exist yet */
+        strncpy(g_current_conversation, "default", sizeof(g_current_conversation) - 1);
+    }
+
+    /* Now it is safe to free the temporary directory list */
+    if (conversation_list) {
+        config_free_conversation_list(conversation_list, conv_count);
+    }
+    
 
     /* Initialize Xt Intrinsics */
     toplevel = XtVaAppInitialize(
@@ -289,11 +336,31 @@ int main(int argc, char *argv[])
     XtManageChild(top_bar);
 
     /* Thread Dropdown (OptionMenu) */
+    int chat_count = 0;
+    char **chats = config_list_conversations(&chat_count);
     conv_pane = XmCreatePulldownMenu(top_bar, "convPane", NULL, 0);
     conv_pane_w = conv_pane;
+
+    if (chat_count == 0) {
+        /* If brand new installation, add default initial chat */
+        Widget btn = XmCreatePushButton(conv_pane, "default", NULL, 0);
+        XtManageChild(btn);
+        XtAddCallback(btn, XmNactivateCallback, conv_select_cb, (XtPointer)"default");
+    } else {
+        int i;
+        for (i = 0; i < chat_count; i++) {
+            Widget btn = XmCreatePushButton(conv_pane, chats[i], NULL, 0);
+            XtManageChild(btn);
+            XtAddCallback(btn, XmNactivateCallback, conv_select_cb, (XtPointer)chats[i]);
+        }
+    }
+
+
+/*
     btn_sample_chat = XmCreatePushButton(conv_pane, "sample chat", NULL, 0);
     XtManageChild(btn_sample_chat);
     XtAddCallback(btn_sample_chat, XmNactivateCallback, conv_select_cb, (XtPointer)"sample chat");
+*/
 
     n = 0;
     XtSetArg(args[n], XmNlabelString, XmStringCreateLocalized("Chat / Context:")); n++;

@@ -1,4 +1,6 @@
 #include "lseai.h"
+#include "globals.h"
+
 
 /* Memory callback for libcurl */
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -23,7 +25,7 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 /* Perform HTTPS POST request using libcurl */
 char *send_request(const char *json_payload) {
     const char *api_key = getenv("GEMINI_API_KEY");
-    const char *model_name = getenv("GEMINI_MODEL");
+/*    const char *model_name = selected_model;*/
     CURL *curl;
     CURLcode res;
     struct curl_slist *headers = NULL;
@@ -40,8 +42,10 @@ char *send_request(const char *json_payload) {
     char endpoint[1024];
     snprintf(endpoint, sizeof(endpoint),
              "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
-             model_name, api_key);
+             g_current_model, api_key);
 
+
+    fprintf( stderr, "endpoint %s\n", endpoint );
 
     headers = curl_slist_append(headers, "Content-Type: application/json");
 
