@@ -338,8 +338,15 @@ int main(int argc, char *argv[])
     XtSetArg(args[n], XmNrows, 4); n++;
     XtSetArg(args[n], XmNeditMode, XmMULTI_LINE_EDIT); n++;
     XtSetArg(args[n], XmNwordWrap, True); n++;
+    XtSetArg(args[n], XmNscrollHorizontal, False); n++;
     input_text_w = XmCreateScrolledText(form, "inputText", args, n);
     XtManageChild(input_text_w);
+
+    /* Enforce word-wrap directly on the text widget */
+    XtVaSetValues(input_text_w,
+        XmNwordWrap, True,
+        XmNscrollHorizontal, False,
+        NULL);
 
     /* -------------------------------------------------------------
      * 3. OUTPUT CONVERSATION PANE (With Copy/Paste Scrolling)
