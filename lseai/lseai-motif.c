@@ -152,10 +152,13 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
 
                 char *ascii_text = clean_to_ascii_string(text);
                 if (ascii_text) {
+                    /* Format Markdown headers, bullets, and code boxes */
+                    char *formatted = format_markdown_to_ascii(ascii_text);
+
                     /* Insert into output scrolled text widget */
 
                     XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), RESPONSE_HEADER);
-                    XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), ascii_text );
+                    XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), formatted );
                     XmTextShowPosition(output_text_w, XmTextGetLastPosition(output_text_w));
                     
                     /* Clean up heap */

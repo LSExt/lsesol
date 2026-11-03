@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <ctype.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <curl/curl.h>
@@ -28,6 +30,7 @@ const char *get_state_file_path(void);
 char *extract_text_field(const char *json_resp);
 void compact_state_file(void);
 char *read_multiline_prompt(const char *title);
+char *format_markdown_to_ascii(const char *src);
 /* state file */
 void init_state_file(void);
 char *read_state_file(void);

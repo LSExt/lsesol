@@ -45,7 +45,8 @@ COMMON_OBJS  = summarize.o \
                state_file.o \
                request.o \
                json.o \
-               print_response.o
+               print_response.o \
+               markdown_formater.o \
 
 # Group 2: CLI-specific Objects (C99 + Wall)
 CLI_OBJS     = lseai.o \
