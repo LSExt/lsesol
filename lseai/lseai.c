@@ -104,19 +104,21 @@ int main(int argc, char **argv) {
         if (response_json) {
             char *text = extract_text_field(response_json);
             if (text) {
-                printf("\nGemini:\n");
+                printf(RESPONSE_HEADER);
                 print_formatted_response(text);
                 printf("\n");
                 update_state_file(line, response_json);
                 free(text);
             } else {
                 /* Fall back to printing raw response if parsing ever fails */
-                printf("\nGemini (Raw Output):\n");
+                printf(RESPONSE_HEADER);
+                printf("\n(Raw Output):\n");
                 print_formatted_response(response_json);
                 printf("\n");
             }
             free(response_json);
         }
+        printf(TURN_DIVIDER);
 
         free(current_state);
         if (escaped_prompt) free(escaped_prompt);

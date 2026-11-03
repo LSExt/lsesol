@@ -362,7 +362,7 @@ int main(int argc, char *argv[])
     XtManageChild(output_text_w);
 
     /* Set default placeholder text */
-    XmTextSetString(output_text_w, "response goes here\n");
+    /*XmTextSetString(output_text_w, "response goes here\n");*/
 
     /* Show window and enter event loop */
     XtRealizeWidget(toplevel);

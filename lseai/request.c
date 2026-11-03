@@ -73,7 +73,6 @@ char *send_request(const char *json_payload) {
         if (res == CURLE_OK && http_code == 200) {
             curl_easy_cleanup(curl);
             curl_slist_free_all(headers);
-            fprintf( stderr, "Success http_code =200 chunk.data: %s \n", chunk.data);
             return chunk.data;
         }
 

@@ -60,7 +60,6 @@ char *json_escape(const char *src) {
     if (!dest) return NULL;
     size_t j = 0;
 
-    fprintf( stderr, "json_escape src param: %s\n", src );
 
     for (size_t i = 0; i < len; i++) {
         switch (src[i]) {
@@ -73,7 +72,6 @@ char *json_escape(const char *src) {
         }
     }
     dest[j] = '\0';
-    fprintf( stderr, "json_escape dest: %s\n", dest);
     return dest;
 }
     

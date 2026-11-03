@@ -26,9 +26,6 @@ char *clean_to_ascii_string(const char *str)
         return NULL;
     }
 
-
-
-
     size_t len = strlen(str);
     for (size_t i = 0; i < len; i++) {
         unsigned char c = (unsigned char)str[i];
@@ -38,10 +35,10 @@ char *clean_to_ascii_string(const char *str)
             char next = str[i + 1];
             switch (next) {
                 case 'n': out[out_idx++] = '\n'; i++; continue;
-                case 'r': i++; continue;
+                case 'r': out[out_idx++] = '\r'; i++; continue;
                 case 't': out[out_idx++] = '\t'; i++; continue;
                 case '"': out[out_idx++] = '"';  i++; continue;
-                case '\\': putchar('\\'); i++; continue;
+                case '\\': out[out_idx++] ='\\'; i++; continue;
                 case 'u':
                     /* Convert Hex Unicode escapes like \u003e to plain ASCII */
                     if (i + 5 < len) {
@@ -71,16 +68,18 @@ char *clean_to_ascii_string(const char *str)
                 if (c3 == 0x9C || c3 == 0x9D) { out[out_idx++] ='"';  i += 2; continue; }
                 if (c3 == 0x93 || c3 == 0x94) { out[out_idx++] ='-';  i += 2; continue; }
                 if (c3 == 0xA2)             { out[out_idx++] = '*';  i += 2; continue; }
-                if (c3 == 0xA6)             { printf("..."); i += 2; continue; }
+                if (c3 == 0xA6)             { out[out_idx++] = '.'; out[out_idx++] = '.'; out[out_idx++] = '.'; i += 2; continue; }
             }
             if ((c & 0xC0) == 0x80) {
                 continue;
             }
             continue;
         }
-
-        /* Print only valid printable ASCII, newline, and tab */
-        if (c >= 32 || c == '\n' || c == '\t') {
+        /* 
+         * Keep printable ASCII, newline, carriage return, tab, 
+         * and ESC (0x1B / 27) for ANSI color sequences 
+         */
+        if (c >= 32 || c == '\n' || c == '\r' || c == '\t' || c == 0x1B) {
             out[out_idx++] = c;
         }
     }
