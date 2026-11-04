@@ -22,88 +22,120 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
 }
 
 
-/* Perform HTTPS POST request using libcurl */
-char *send_request(const char *json_payload) {
+/* File-scoped persistent handle */
+static CURL *s_curl = NULL;
+
+/* Call this during application shutdown (e.g. from File -> Exit callback) */
+void cleanup_curl_subsystem(void)
+{
+    if (s_curl) {
+        curl_easy_cleanup(s_curl);
+        s_curl = NULL;
+    }
+}
+
+/* Perform HTTPS POST request reusing persistent TLS connection */
+char *send_request(const char *json_payload)
+{
     const char *api_key = getenv("GEMINI_API_KEY");
-/*    const char *model_name = selected_model;*/
-    CURL *curl;
     CURLcode res;
     struct curl_slist *headers = NULL;
     int retries = 3;
     long http_code = 0;
-
+    char endpoint[1024];
 
     if (!api_key) {
         fprintf(stderr, "[Error: GEMINI_API_KEY environment variable is not set]\n");
         return NULL;
     }
 
-    /* Build endpoint URL internally */
-    char endpoint[1024];
+    /* Initialize persistent handle on first use */
+    if (!s_curl) {
+        s_curl = curl_easy_init();
+        if (!s_curl) {
+            fprintf(stderr, "[Error: curl_easy_init() failed]\n");
+            return NULL;
+        }
+
+        /* Set one-time permanent options */
+        curl_easy_setopt(s_curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(s_curl, CURLOPT_TCP_KEEPALIVE, 1L);
+        /* Send first probe after 60s idle */
+        curl_easy_setopt(s_curl, CURLOPT_TCP_KEEPIDLE, 60L);
+        /* Subsequent probes every 30s */
+        curl_easy_setopt(s_curl, CURLOPT_TCP_KEEPINTVL, 30L);
+
+/* (Avoids sending a POST payload into a half-closed TCP pipe) */
+#ifdef LIBCURL_VERSION_NUM = 0x072400 /* 7.36.0+ */
+        curl_easy_setopt(s_curl, CURLOPT_EXPECT_100_TIMEOUT_MS, 0L);
+#endif
+
+        /* SPARC TLS Handshake Optimizations */
+        curl_easy_setopt(s_curl, CURLOPT_CONNECTTIMEOUT, 60L);
+        curl_easy_setopt(s_curl, CURLOPT_TIMEOUT, 120L);
+        curl_easy_setopt(s_curl, CURLOPT_SSL_CIPHER_LIST,
+            "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+            "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:HIGH");
+        curl_easy_setopt(s_curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(s_curl, CURLOPT_SSL_VERIFYHOST, 2L);
+
+        /* Use small, Google-specific CA bundle to avoid parsing large root stores */
+        /* curl_easy_setopt(s_curl, CURLOPT_CAINFO, "/usr/local/lse/certs/google_roots.pem"); */
+    }
+
+    /* Format URL */
     snprintf(endpoint, sizeof(endpoint),
              "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
              g_current_model, api_key);
 
-
-    fprintf( stderr, "endpoint %s\n", endpoint );
-
     headers = curl_slist_append(headers, "Content-Type: application/json");
 
     while (retries > 0) {
-        struct MemoryBuffer chunk = { (char *)malloc(1), 0 };
-        if (!chunk.data){
-            fprintf( stderr, "Failed to malloc(1)\n" );
-            return NULL;
-        }
-
-
-        curl = curl_easy_init();
-        if (!curl) {
-            fprintf( stderr, "failed curl_easy_init()\n" );
-            free(chunk.data);
-            return NULL;
-        }
-
-        curl_easy_setopt(curl, CURLOPT_URL, endpoint);
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_payload);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-
-        res = curl_easy_perform(curl);
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-        if (res == CURLE_OK && http_code == 200) {
-            curl_easy_cleanup(curl);
+        struct MemoryBuffer chunk;
+        chunk.data = (char *)malloc(1);
+        if (!chunk.data) {
+            fprintf(stderr, "[Error: malloc(1) failed]\n");
             curl_slist_free_all(headers);
-            return chunk.data;
+            return NULL;
         }
+        chunk.data[0] = '\0';
+        chunk.size = 0;
 
-        /* If 503 Service Unavailable, wait 2 seconds and retry */
-        if (http_code == 503 && retries > 1) {
-            printf("[503 Server Busy - Retrying in 2s... (%d left)]\n", retries - 1);
-            sleep(2);
-        } else if (res != CURLE_OK) {
-            fprintf(stderr, "\ncurl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-            curl_easy_cleanup(curl);
-            free(chunk.data);
-            break;
+        /* Apply per-request options */
+        curl_easy_setopt(s_curl, CURLOPT_URL, endpoint);
+        curl_easy_setopt(s_curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(s_curl, CURLOPT_POSTFIELDS, json_payload);
+        curl_easy_setopt(s_curl, CURLOPT_WRITEDATA, (void *)&chunk);
+
+        res = curl_easy_perform(s_curl);
+        curl_easy_getinfo(s_curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+        if (res == CURLE_OK) {
+            if (http_code == 200) {
+                /* Success */
+                curl_slist_free_all(headers);
+                return chunk.data;
+            } else if (http_code == 503 && retries > 1) {
+                fprintf(stderr, "[503 Server Busy - Retrying in 2s... (%d left)]\n", retries - 1);
+                free(chunk.data);
+                sleep(2);
+            } else {
+                /* Return JSON error payload for parsing/displaying error messages */
+                fprintf(stderr, "API returned HTTP %ld\n", http_code);
+                curl_slist_free_all(headers);
+                return chunk.data;
+            }
         } else {
-            /* Non-200 HTTP code (e.g., 404, 429) - return raw JSON payload for inspection */
-            curl_easy_cleanup(curl);
-            curl_slist_free_all(headers);
-            fprintf( stderr, "Non-200 return return %li chunk.data %s\n", http_code, chunk.data );
-            return chunk.data;
+            fprintf(stderr, "\ncurl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+            free(chunk.data);
+            /* If connection reset or closed by peer, breaking or retrying will auto-reconnect */
+            break;
         }
 
-        curl_easy_cleanup(curl);
-        free(chunk.data);
         retries--;
     }
 
     curl_slist_free_all(headers);
-    fprintf( stderr, "unable to obtain success response\n");
+    fprintf(stderr, "Unable to obtain success response\n");
     return NULL;
 }
-
