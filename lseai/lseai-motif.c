@@ -92,6 +92,83 @@ static void new_chat_ok_cb(Widget w, XtPointer client_data, XtPointer call_data)
     /* Destroy the prompt dialog */
     XtDestroyWidget(w);
 }
+static Widget add_menu_item( Widget parent, const char *label,
+                            const char *accel, const char *accel_text,
+                             XtCallbackProc cb, XtPointer client_data)
+{
+    Widget btn;
+    XmString x_label = XmStringCreateLocalized((char *)label);
+    XmString x_accel = accel_text ? XmStringCreateLocalized((char *)accel_text) : NULL;
+    int n = 0;
+    Arg args[8];
+
+    XtSetArg(args[n], XmNlabelString, x_label); n++;
+    if (accel && x_accel) {
+        XtSetArg(args[n], XmNaccelerator, accel); n++;
+        XtSetArg(args[n], XmNacceleratorText, x_accel); n++;
+    }
+
+    btn = XmCreatePushButton(parent, (char *)label, args, n);
+    XtManageChild(btn);
+
+    if (cb) {
+        XtAddCallback(btn, XmNactivateCallback, cb, client_data);
+    }
+
+    XmStringFree(x_label);
+    if (x_accel) XmStringFree(x_accel);
+
+    return btn;
+}
+
+static void add_menu_separator(Widget parent)
+{
+    Widget sep = XmCreateSeparator(parent, "separator", NULL, 0);
+    XtManageChild(sep);
+}
+
+static void cb_menu_edit_cut(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget focus = XmGetFocusWidget(toplevel_w);
+    if (XmIsText(focus)) {
+        XmTextCut(focus, CurrentTime);
+    }
+}
+
+static void cb_menu_edit_copy(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget focus = XmGetFocusWidget(toplevel_w);
+    if (XmIsText(focus)) {
+        XmTextCopy(focus, CurrentTime);
+    }
+}
+
+static void cb_menu_edit_paste(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget focus = XmGetFocusWidget(toplevel_w);
+    if (XmIsText(focus)) {
+        XmTextPaste(focus);
+    }
+}
+
+static void cb_menu_edit_select_all(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    /* If input widget is active, select prompt; otherwise select entire terminal */
+    Widget focus = XmGetFocusWidget(toplevel_w);
+    Widget target = (focus == input_text_w) ? input_text_w : output_text_w;
+    XmTextSetSelection(target, 0, XmTextGetLastPosition(target), CurrentTime);
+}
+
+static void cb_menu_edit_clear_screen(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    XmTextSetString(output_text_w, "");
+}
+
+static void cb_menu_edit_clear_prompt(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    XmTextSetString(input_text_w, "");
+}
+
 
 /* Callback: Manual Conversation Compaction */
 static void compress_cb(Widget w, XtPointer client_data, XtPointer call_data)
@@ -361,6 +438,10 @@ int main(int argc, char *argv[])
 
     Widget menu_bar, conv_menu_pane, conv_cascade, compress_item;
     XmString label_str;
+    Widget menu_edit, cascade_edit;
+    XmString s_edit;
+
+    
     Arg args[20];
     int n;
 
@@ -444,6 +525,30 @@ int main(int argc, char *argv[])
      * ------------------------------------------------------------- */
     menu_bar = XmCreateMenuBar(main_window, "menuBar", NULL, 0);
     XtManageChild(menu_bar);
+
+    /* -------------------------------------------------------------
+     * 2. EDIT MENU
+     * ------------------------------------------------------------- */
+    menu_edit = XmCreatePulldownMenu(menu_bar, "menuEdit", NULL, 0);
+
+    add_menu_item(menu_edit, "Cut", NULL, NULL, cb_menu_edit_cut, NULL);
+    add_menu_item(menu_edit, "Copy", NULL, NULL, cb_menu_edit_copy, NULL);
+    add_menu_item(menu_edit, "Paste", NULL, NULL, cb_menu_edit_paste, NULL);
+    add_menu_separator(menu_edit);
+    add_menu_item(menu_edit, "Select All", "Ctrl<Key>A", "Ctrl+A", cb_menu_edit_select_all, NULL);
+    add_menu_separator(menu_edit);
+    add_menu_item(menu_edit, "Clear Screen", NULL, NULL, cb_menu_edit_clear_screen, NULL);
+    add_menu_item(menu_edit, "Clear Prompt Box", NULL, NULL, cb_menu_edit_clear_prompt, NULL);
+
+    s_edit = XmStringCreateLocalized("Edit");
+    cascade_edit = XtVaCreateManagedWidget("cascadeEdit",
+        xmCascadeButtonWidgetClass, menu_bar,
+        XmNlabelString, s_edit,
+        XmNmnemonic, 'E',
+        XmNsubMenuId, menu_edit,
+        NULL);
+    XmStringFree(s_edit);
+
 
     /* "Conversation" Pulldown */
     conv_menu_pane = XmCreatePulldownMenu(menu_bar, "convMenuPane", NULL, 0);
