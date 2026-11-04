@@ -283,14 +283,18 @@ int main(int argc, char *argv[])
     char **conversation_list = config_list_conversations(&conv_count);
 
     if (conversation_list && conv_count > 0) {
-        /* Safely copy the first chat name into our global array */
-        strncpy(g_current_conversation, conversation_list[0], sizeof(g_current_conversation) - 1);
-        g_current_conversation[sizeof(g_current_conversation) - 1] = '\0';
+        /* Construct full path: ~/.lseai/conversations/<chat_name>.gemini.json */
+        snprintf(g_current_conversation, sizeof(g_current_conversation),
+                 "%s/%s.gemini.json", g_config.state_dir, conversation_list[0]);
     } else {
-        /* Default fallback if no conversations exist yet */
-        strncpy(g_current_conversation, "default", sizeof(g_current_conversation) - 1);
+        /* Default fallback path */
+        snprintf(g_current_conversation, sizeof(g_current_conversation),
+                 "%s/default.gemini.json", g_config.state_dir);
     }
+    g_current_conversation[sizeof(g_current_conversation) - 1] = '\0';
 
+    /* Make sure the state file exists with empty JSON {"contents":[]} */
+    init_state_file();
     /* Now it is safe to free the temporary directory list */
     if (conversation_list) {
         config_free_conversation_list(conversation_list, conv_count);
@@ -338,35 +342,47 @@ int main(int argc, char *argv[])
     /* Thread Dropdown (OptionMenu) */
     int chat_count = 0;
     char **chats = config_list_conversations(&chat_count);
+    Widget initial_btn = NULL;
+    char *initial_chat_name = NULL;
+
     conv_pane = XmCreatePulldownMenu(top_bar, "convPane", NULL, 0);
     conv_pane_w = conv_pane;
 
     if (chat_count == 0) {
-        /* If brand new installation, add default initial chat */
-        Widget btn = XmCreatePushButton(conv_pane, "default", NULL, 0);
-        XtManageChild(btn);
-        XtAddCallback(btn, XmNactivateCallback, conv_select_cb, (XtPointer)"default");
+        /* No saved files found: initialize "default" */
+        initial_chat_name = strdup("default");
+        initial_btn = XmCreatePushButton(conv_pane, initial_chat_name, NULL, 0);
+        XtManageChild(initial_btn);
+        XtAddCallback(initial_btn, XmNactivateCallback, conv_select_cb, (XtPointer)initial_chat_name);
     } else {
         int i;
         for (i = 0; i < chat_count; i++) {
-            Widget btn = XmCreatePushButton(conv_pane, chats[i], NULL, 0);
+            /* Keep persistent heap string for each callback client_data */
+            char *saved_name = strdup(chats[i]);
+            Widget btn = XmCreatePushButton(conv_pane, saved_name, NULL, 0);
             XtManageChild(btn);
-            XtAddCallback(btn, XmNactivateCallback, conv_select_cb, (XtPointer)chats[i]);
+            XtAddCallback(btn, XmNactivateCallback, conv_select_cb, (XtPointer)saved_name);
+
+            if (i == 0) {
+                initial_btn = btn;
+                initial_chat_name = saved_name;
+            }
         }
     }
-
-
-/*
-    btn_sample_chat = XmCreatePushButton(conv_pane, "sample chat", NULL, 0);
-    XtManageChild(btn_sample_chat);
-    XtAddCallback(btn_sample_chat, XmNactivateCallback, conv_select_cb, (XtPointer)"sample chat");
-*/
 
     n = 0;
     XtSetArg(args[n], XmNlabelString, XmStringCreateLocalized("Chat / Context:")); n++;
     XtSetArg(args[n], XmNsubMenuId, conv_pane); n++;
     conv_menu_w = XmCreateOptionMenu(top_bar, "convOptionMenu", args, n);
     XtManageChild(conv_menu_w);
+
+    /* --- INITIALIZE GLOBAL VARIABLE ON APPLICATION STARTUP --- */
+    if (initial_chat_name) {
+        snprintf(g_current_conversation, sizeof(g_current_conversation),
+                 "%s/%s.gemini.json", g_config.state_dir, initial_chat_name);
+        init_state_file();
+        printf("Initial conversation set to: %s\n", g_current_conversation);
+    }
 
     /* New Chat Button */
     n = 0;
