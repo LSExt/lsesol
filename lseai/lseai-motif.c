@@ -238,11 +238,15 @@ static void new_conv_cb(Widget w, XtPointer client_data, XtPointer call_data)
     XtManageChild(dialog);
 }
 
-/* Callback: Model Selected */
+/* Callback: Model Selected from Dropdown */
 static void model_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
 {
     char *model_name = (char *)client_data;
-    printf("Selected Model: %s\n", model_name);
+    if (model_name && strlen(model_name) > 0) {
+        strncpy(g_current_model, model_name, sizeof(g_current_model) - 1);
+        g_current_model[sizeof(g_current_model) - 1] = '\0';
+        printf("Switched Model to: %s\n", g_current_model);
+    }
 }
 
 /* Callback: Thread Selected */
@@ -299,7 +303,36 @@ int main(int argc, char *argv[])
     if (conversation_list) {
         config_free_conversation_list(conversation_list, conv_count);
     }
-    
+
+       /* Initialize active model: match default_model from config, or pick first available */
+    g_current_model[0] = '\0';
+
+    if (g_config.model_count > 0) {
+        int i;
+        /* find configured default_model in available models */
+        for (i = 0; i < g_config.model_count; i++) {
+            if (strncmp(g_config.models[i], g_config.default_model, sizeof(g_config.default_model) - 1) == 0) {
+                strncpy(g_current_model, g_config.models[i], sizeof(g_current_model) - 1);
+                g_current_model[sizeof(g_current_model) - 1] = '\0';
+                break;
+            }
+        }
+
+        /* If default_model was not matched, take the first model in the list */
+        if (g_current_model[0] == '\0') {
+            strncpy(g_current_model, g_config.models[0], sizeof(g_current_model) - 1);
+            g_current_model[sizeof(g_current_model) - 1] = '\0';
+        }
+    }
+
+    /* Ultimate hardcoded fallback if config list was empty */
+    if (g_current_model[0] == '\0') {
+        strncpy(g_current_model, "gemini-2.5-flash", sizeof(g_current_model) - 1);
+        g_current_model[sizeof(g_current_model) - 1] = '\0';
+    }
+
+    printf("Active model set to: %s\n", g_current_model);
+    g_current_model[0] = '\0';
 
     /* Initialize Xt Intrinsics */
     toplevel = XtVaAppInitialize(
@@ -390,11 +423,34 @@ int main(int argc, char *argv[])
     XtManageChild(new_btn);
     XtAddCallback(new_btn, XmNactivateCallback, new_conv_cb, NULL);
 
+    Widget initial_model_btn = NULL;
     /* Model Dropdown (OptionMenu) */
     model_pane = XmCreatePulldownMenu(top_bar, "modelPane", NULL, 0);
-    btn_model = XmCreatePushButton(model_pane, "gemini-flash-3.8", NULL, 0);
-    XtManageChild(btn_model);
-    XtAddCallback(btn_model, XmNactivateCallback, model_select_cb, (XtPointer)"gemini-flash-3.8");
+
+    if (g_config.model_count > 0) {
+        int i;
+        for (i = 0; i < g_config.model_count; i++) {
+            /* Create persistent string for client_data callback */
+            char *saved_model = strdup(g_config.models[i]);
+            Widget btn = XmCreatePushButton(model_pane, saved_model, NULL, 0);
+            XtManageChild(btn);
+            XtAddCallback(btn, XmNactivateCallback, model_select_cb, (XtPointer)saved_model);
+
+            /* Check if this button matches the active model to select it */
+            if (strcmp(saved_model, g_current_model) == 0) {
+                initial_model_btn = btn;
+            } else if (i == 0 && initial_model_btn == NULL) {
+                /* Fallback to first button if match not found yet */
+                initial_model_btn = btn;
+            }
+        }
+    } else {
+        /* Fallback if config has no models defined */
+        char *fallback_model = strdup("gemini-2.5-flash");
+        initial_model_btn = XmCreatePushButton(model_pane, fallback_model, NULL, 0);
+        XtManageChild(initial_model_btn);
+        XtAddCallback(initial_model_btn, XmNactivateCallback, model_select_cb, (XtPointer)fallback_model);
+    }
 
     n = 0;
     XtSetArg(args[n], XmNlabelString, XmStringCreateLocalized("Model:")); n++;
