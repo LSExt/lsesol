@@ -27,11 +27,13 @@ static Widget input_text_w;
 static Widget conv_menu_w;
 static Widget conv_pane_w;
 static Widget model_menu_w;
+static Widget model_pane_w;
 static Widget toplevel_w;
 
 
 /* Forward declaration so new_chat_ok_cb can reference it */
 static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data);
+static void model_select_cb(Widget w, XtPointer client_data, XtPointer call_data);
 
 
 /* Callback: When user clicks "OK" in the New Chat Dialog */
@@ -82,6 +84,57 @@ static void new_chat_ok_cb(Widget w, XtPointer client_data, XtPointer call_data)
 
     /* Destroy the prompt dialog */
     XtDestroyWidget(w);
+}
+
+/* Helper to rebuild the Model OptionMenu pane dynamically */
+void refresh_model_dropdown(void)
+{
+    WidgetList children;
+    Cardinal num_children = 0;
+    int i;
+    Widget initial_btn = NULL;
+
+    /* 1. Remove all old model buttons from the pulldown pane */
+    XtVaGetValues(model_pane_w,
+                  XmNchildren, &children,
+                  XmNnumChildren, &num_children,
+                  NULL);
+
+    for (i = (int)num_children - 1; i >= 0; i--) {
+        XtDestroyWidget(children[i]);
+    }
+
+    /* 2. Recreate buttons from updated g_config.models */
+    for (i = 0; i < g_config.model_count; i++) {
+        char *saved_model = strdup(g_config.models[i]);
+        Widget btn = XmCreatePushButton(model_pane_w, saved_model, NULL, 0);
+        XtManageChild(btn);
+        XtAddCallback(btn, XmNactivateCallback, model_select_cb, (XtPointer)saved_model);
+
+        if (strcmp(saved_model, g_current_model) == 0 || i == 0) {
+            initial_btn = btn;
+        }
+    }
+
+    /* 3. Re-set visible selection */
+    if (initial_btn) {
+        XtVaSetValues(model_menu_w, XmNmenuHistory, initial_btn, NULL);
+    }
+}
+
+/* Callback: User clicks Refresh Models */
+static void refresh_models_cb(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    const char *key = getenv("GEMINI_API_KEY"); /* Or load from config */
+
+    append_conversation_text(output_text_w, "\nQuerying Google API for supported models...\n");
+
+    if (fetch_remote_models(key) == 0) {
+        refresh_model_dropdown();
+        append_conversation_text(output_text_w, "Model list updated successfully.\n");
+    } else {
+        append_conversation_text(output_text_w, "Failed to retrieve models from Google.\n");
+    }
 }
 
 /* Callback: When user clicks "Cancel" in the New Chat Dialog */
@@ -426,6 +479,7 @@ int main(int argc, char *argv[])
     Widget initial_model_btn = NULL;
     /* Model Dropdown (OptionMenu) */
     model_pane = XmCreatePulldownMenu(top_bar, "modelPane", NULL, 0);
+    model_pane_w = model_pane;
 
     if (g_config.model_count > 0) {
         int i;

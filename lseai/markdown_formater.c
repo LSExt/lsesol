@@ -1,3 +1,4 @@
+#include "lseai.h"
 /*
  * Transforms raw Gemini markdown into structured, human-readable
  * ASCII text suitable for XmText widgets and terminals.

@@ -47,6 +47,7 @@ COMMON_OBJS  = summarize.o \
                json.o \
                print_response.o \
                markdown_formater.o \
+               iamodels.o \
                config.o \
                globals.o
 
