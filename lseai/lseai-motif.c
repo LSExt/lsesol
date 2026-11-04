@@ -417,7 +417,6 @@ int main(int argc, char *argv[])
     }
 
     printf("Active model set to: %s\n", g_current_model);
-    g_current_model[0] = '\0';
 
     /* Initialize Xt Intrinsics */
     toplevel = XtVaAppInitialize(
@@ -613,7 +612,7 @@ int main(int argc, char *argv[])
     XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_WIDGET); n++;
-    XtSetArg(args[n], XmNbottomWidget, input_text_w); n++;
+    XtSetArg(args[n], XmNbottomWidget, XtParent(input_text_w)); n++;
     XtSetArg(args[n], XmNeditable, False); n++;               /* Read only */
     XtSetArg(args[n], XmNcursorPositionVisible, False); n++;
     XtSetArg(args[n], XmNeditMode, XmMULTI_LINE_EDIT); n++;
