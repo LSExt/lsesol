@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <Xm/Xm.h>
 #include <Xm/MainW.h>
+#include <Xm/CascadeB.h>
 #include <Xm/Form.h>
 #include <Xm/RowColumn.h>
 #include <Xm/PushB.h>
@@ -30,6 +31,12 @@ static Widget model_menu_w;
 static Widget model_pane_w;
 static Widget toplevel_w;
 
+
+static void append_conversation_text( Widget w, char *msg)
+{
+	 XmTextInsert(w, XmTextGetLastPosition(output_text_w), msg);
+	 XmTextShowPosition(w, XmTextGetLastPosition(output_text_w));
+}
 
 /* Forward declaration so new_chat_ok_cb can reference it */
 static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data);
@@ -84,6 +91,28 @@ static void new_chat_ok_cb(Widget w, XtPointer client_data, XtPointer call_data)
 
     /* Destroy the prompt dialog */
     XtDestroyWidget(w);
+}
+
+/* Callback: Manual Conversation Compaction */
+static void compress_cb(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    int keep_n = (g_config.keep_last_turns > 0) ? g_config.keep_last_turns : 5;
+    char msg[256];
+
+    append_conversation_text(output_text_w, "\n>>> [ Compacting conversation history... ] <<<\n");
+    XFlush(XtDisplay(output_text_w));
+
+    if (compact_state_file() == 0) {
+        snprintf(msg, sizeof(msg), 
+                 ">>> [ Compaction successful. Keeping last %d turns + summary. ] <<<\n\n", keep_n);
+        append_conversation_text(output_text_w, msg);
+    } else {
+        append_conversation_text(output_text_w, 
+                 ">>> [ Compaction skipped or failed (not enough turns or API error). ] <<<\n\n");
+    }
+
+    /* Scroll to bottom */
+    XmTextShowPosition(output_text_w, XmTextGetLastPosition(output_text_w));
 }
 
 /* Helper to rebuild the Model OptionMenu pane dynamically */
@@ -329,6 +358,9 @@ int main(int argc, char *argv[])
     Widget top_bar, conv_pane, model_pane, new_btn;
     Widget btn_sample_chat, btn_model;
     Widget send_btn;
+
+    Widget menu_bar, conv_menu_pane, conv_cascade, compress_item;
+    XmString label_str;
     Arg args[20];
     int n;
 
@@ -398,20 +430,48 @@ int main(int argc, char *argv[])
     );
     toplevel_w = toplevel;
 
-    /* Main Window Shell */
+   /* Main Window Shell Dimensions */
     n = 0;
     XtSetArg(args[n], XmNtitle, "Gemini AI Client - Solaris CDE"); n++;
-    XtSetArg(args[n], XmNwidth, 700); n++;
-    XtSetArg(args[n], XmNheight, 550); n++;
+    XtSetArg(args[n], XmNwidth, 780); n++;
+    XtSetArg(args[n], XmNheight, 600); n++;
     XtSetValues(toplevel, args, n);
-
 
     main_window = XmCreateMainWindow(toplevel, "mainWindow", NULL, 0);
     XtManageChild(main_window);
 
-    /* Top-level Form layout */
+    /* -------------------------------------------------------------
+     * TOP MENU BAR (XmMenuBar)
+     * ------------------------------------------------------------- */
+    menu_bar = XmCreateMenuBar(main_window, "menuBar", NULL, 0);
+    XtManageChild(menu_bar);
+
+    /* "Conversation" Pulldown */
+    conv_menu_pane = XmCreatePulldownMenu(menu_bar, "convMenuPane", NULL, 0);
+
+    /* Menu Item: Compress */
+    compress_item = XmCreatePushButton(conv_menu_pane, "Compress (Summarize History)", NULL, 0);
+    XtManageChild(compress_item);
+    XtAddCallback(compress_item, XmNactivateCallback, compress_cb, NULL);
+
+    /* Cascade button on the menu bar pointing to the pane */
+    label_str = XmStringCreateLocalized("Conversation");
+    n = 0;
+    XtSetArg(args[n], XmNsubMenuId, conv_menu_pane); n++;
+    XtSetArg(args[n], XmNlabelString, label_str); n++;
+    conv_cascade = XmCreateCascadeButton(menu_bar, "convCascade", args, n);
+    XtManageChild(conv_cascade);
+    XmStringFree(label_str); /* Free your copy to prevent a memory leak */
+
+    /* -------------------------------------------------------------
+     * MAIN FORM CONTAINER (Below MenuBar)
+     * ------------------------------------------------------------- */
     form = XmCreateForm(main_window, "mainForm", NULL, 0);
     XtManageChild(form);
+
+    /* Tell XmMainWindow about the MenuBar and Form WorkArea */
+    XmMainWindowSetAreas(main_window, menu_bar, NULL, NULL, NULL, form);
+
 
     /* -------------------------------------------------------------
      * 1. TOP CONTROL BAR (RowColumn with Menus & Buttons)

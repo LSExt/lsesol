@@ -1,14 +1,14 @@
 #include "lseai.h"
 
 /* Option A: Summarize and compact thread history into a baseline context block */
-void compact_state_file(void) {
+int compact_state_file(void) {
     const char *path = get_state_file_path();
 
     /* Read current thread history from state file */
     FILE *f = fopen(path, "r");
     if (!f) {
         printf("[Compact] No state file found at %s\n\n", path);
-        return;
+        return(0);
     }
 
     fseek(f, 0, SEEK_END);
@@ -18,13 +18,13 @@ void compact_state_file(void) {
     if (sz <= 20) {
         fclose(f);
         printf("[Compact] State file is empty.\n\n");
-        return;
+        return(0);
     }
 
     char *history_json = (char *)malloc(sz + 1);
     if (!history_json) {
         fclose(f);
-        return;
+        return(-1);
     }
 
     fread(history_json, 1, sz, f);
@@ -43,7 +43,7 @@ void compact_state_file(void) {
     char *payload = (char *)malloc(payload_sz);
     if (!payload) {
         free(history_json);
-        return;
+        return(-1);
     }
 
     char *close_bracket = strrchr(history_json, ']');
@@ -66,7 +66,7 @@ void compact_state_file(void) {
 
     if (!resp_json) {
         printf("[Error: Compaction API request failed]\n\n");
-        return;
+        return(-1);
     }
 
     char *summary_text = extract_text_field(resp_json);
@@ -74,10 +74,11 @@ void compact_state_file(void) {
 
     if (!summary_text) {
         printf("[Error: Failed to parse summary from API response]\n\n");
-        return;
+        return(-1);
     }
 
     /* Render summary and save to disk */
+    /* BUG: with ifdef _MOTIF send it to the widget of the conversation */
     printf("\n=== Compacted Thread Summary ===\n");
     print_formatted_response(summary_text);
     printf("================================\n\n");
@@ -95,4 +96,5 @@ void compact_state_file(void) {
     }
 
     free(summary_text);
+    return(0);
 }
