@@ -69,6 +69,21 @@ static void parse_models_list(char *val)
     }
 }
 
+static int check_config_security(const char *path)
+{
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        /* Check if group or others have read/write/execute permissions (0077) */
+        if (st.st_mode & (S_IRWXG | S_IRWXO)) {
+            fprintf(stderr, "WARNING: %s has insecure permissions (mode 0%o)!\n", 
+                    path, (unsigned int)(st.st_mode & 0777));
+            fprintf(stderr, "Enforcing private access (chmod 0600 %s)...\n", path);
+            chmod(path, 0600);
+        }
+    }
+    return 0;
+}
+
 int config_load(const char *custom_path)
 {
     char conf_path[MAX_PATH_LEN];
@@ -82,6 +97,8 @@ int config_load(const char *custom_path)
     } else {
         expand_home_path("~/.lseaiconf", conf_path, sizeof(conf_path));
     }
+
+    check_config_security( conf_path );
 
     fp = fopen(conf_path, "r");
     if (!fp) {
