@@ -101,32 +101,47 @@ void update_state_file(const char *user_prompt, const char *raw_resp_json) { cha
 }
                
 
-/* Helper to check if file size or turns exceed g_config limits */
-int should_auto_summarize(const char *filepath, int turn_count)
+/* Helper to check if file size or turns exceed g_config limits.
+ * Optionally writes back the file size (in bytes)
+ * if out_turns or out_size are non-NULL.
+ */
+int should_auto_summarize(const char *filepath, int turn_count, long *out_size)
 {
+    long current_size = 0;
+    int trigger = 0;
+
+    /* 1. Gather current file size if path is valid */
+    if (filepath && filepath[0] != '\0') {
+        struct stat st;
+        if (stat(filepath, &st) == 0) {
+            current_size = (long)st.st_size;
+        }
+    }
+
+    if (out_size) {
+        *out_size = current_size;
+    }
+
     /* Master switch in config */
     if (!g_config.auto_summarize) {
         return 0;
     }
 
-    /* 1. Turn count trigger */
+    /* 3. Turn count trigger */
     if (g_config.max_turns > 0 && turn_count >= g_config.max_turns) {
         printf("[Auto-Summarize Trigger] Conversation turns (%d) >= max_turns (%d)\n",
                turn_count, g_config.max_turns);
-        return 1;
+        trigger = 1;
     }
 
-    /* 2. File size trigger */
-    if (g_config.max_size_bytes > 0 && filepath && strlen(filepath) > 0) {
-        struct stat st;
-        if (stat(filepath, &st) == 0 && st.st_size >= g_config.max_size_bytes) {
-            printf("[Auto-Summarize Trigger] Conversation size (%ld bytes) >= max_size (%ld bytes)\n",
-                   (long)st.st_size, g_config.max_size_bytes);
-            return 1;
-        }
+    /* 4. File size trigger */
+    if (g_config.max_size_bytes > 0 && current_size >= g_config.max_size_bytes) {
+        printf("[Auto-Summarize Trigger] Conversation size (%ld bytes) >= max_size (%ld bytes)\n",
+               current_size, g_config.max_size_bytes);
+        trigger = 1;
     }
 
-    return 0;
+    return trigger;
 }
 
 int perform_auto_summarization(const char *filepath, int total_turns)

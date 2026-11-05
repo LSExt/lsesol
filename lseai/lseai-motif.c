@@ -42,6 +42,11 @@ static Widget toplevel_w;
 static Widget g_find_dialog = NULL;
 static char g_last_search_term[256] = "";
 
+/* Conversation deepth indicator */
+static Widget g_depth_label_w = NULL;
+static Widget g_status_msg_w = NULL;
+
+
 
 void force_motif_render(Widget w)
 {
@@ -64,6 +69,51 @@ static void append_conversation_text( Widget w, char *msg)
 {
 	 XmTextInsert(w, XmTextGetLastPosition(output_text_w), msg);
 	 XmTextShowPosition(w, XmTextGetLastPosition(output_text_w));
+}
+
+void set_status_message(const char *msg)
+{
+    XmString xms;
+
+    if (!g_status_msg_w) {
+        return;
+    }
+
+    xms = XmStringCreateLocalized((char *)msg);
+    XtVaSetValues(g_status_msg_w,
+                  XmNlabelString, xms,
+                  NULL);
+    XmStringFree(xms);
+
+    /* CRITICAL FOR BLOCKING CALLS:
+     * Force Motif/X11 to flush and repaint immediately,
+     * otherwise the UI will not visibly update until after
+     * network I/O or summarization completes.
+     */
+    if (XtIsRealized(g_status_msg_w)) {
+        XmUpdateDisplay(g_status_msg_w);
+    }
+}
+
+void set_depth_display(int turn_count, long file_size)
+{
+    char buf[32];
+    XmString xms;
+
+    if (!g_depth_label_w) {
+        return;
+    }
+
+    snprintf(buf, sizeof(buf), " | Turns: %d | File Size: %ld", turn_count, file_size);
+    xms = XmStringCreateLocalized(buf);
+    XtVaSetValues(g_depth_label_w,
+                  XmNlabelString, xms,
+                  NULL);
+    XmStringFree(xms);
+
+    if (XtIsRealized(g_depth_label_w)) {
+        XmUpdateDisplay(g_depth_label_w);
+    }
 }
 
 /* Forward declaration so new_chat_ok_cb can reference it */
@@ -492,21 +542,27 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
 
         /* Trigger auto-summarization if thresholds are exceeded */
         int current_turns = count_conversation_turns(g_current_conversation);
-        if (should_auto_summarize(g_current_conversation, current_turns)) {
+        int did_compact = false;
+        long out_file_size = 0L;
+        int do_summarize = should_auto_summarize(g_current_conversation, current_turns, &out_file_size);
+        set_depth_display(current_turns, out_file_size); 
+        if ( do_summarize ){
             /* Update Motif status label or cursor if available */
-            append_conversation_text(output_text_w, "\n>>> System >>> Compacting long conversation history...");
-            append_conversation_text(output_text_w, ">>> System >>> Compacting long conversation history...");
+            set_status_message("Status: Compacting conversation history...");
             
             /* Force X11 to flush so the UI reflects the status update immediately */
             XmUpdateDisplay(toplevel_w);
             perform_auto_summarization(g_current_conversation, current_turns);
 
-            append_conversation_text(output_text_w, "Ready.\n");
+            set_status_message("Status: Done compacting");
+            did_compact = true;
         }
         /* Force render before the network request blocks the loop */
         force_motif_render(output_text_w);
 
         printf("Thinking...\n");
+        if( did_compact ) set_status_message( "Status: Done compacting. Thinking...");
+        else set_status_message("Thinking...");
         char *response_json = send_request(full_payload);
 
 
@@ -1206,6 +1262,35 @@ int main(int argc, char *argv[])
     menu_bar = create_main_menubar( main_window);
 
 
+
+    /* Bottom status container */
+    Widget status_bar = XmCreateRowColumn(main_window, "statusBar", NULL, 0);
+    XtVaSetValues(status_bar,
+                  XmNorientation, XmHORIZONTAL,
+                  XmNpacking, XmPACK_TIGHT,
+                  NULL);
+    
+    /* Left side: operational state ("Ready", "Thinking...", "Compacting...") */
+    g_status_msg_w = XmCreateLabel(status_bar, "statusMsg", NULL, 0);
+    {
+        XmString rdy = XmStringCreateLocalized("Status: Ready");
+        XtVaSetValues(g_status_msg_w, XmNlabelString, rdy, NULL);
+        XmStringFree(rdy);
+    }
+    XtManageChild(g_status_msg_w);
+    
+    /* Right side: depth / turns counter */
+    g_depth_label_w = XmCreateLabel(status_bar, "depthMsg", NULL, 0);
+    {
+        XmString turns = XmStringCreateLocalized(" | Turns: 0");
+        XtVaSetValues(g_depth_label_w, XmNlabelString, turns, NULL);
+        XmStringFree(turns);
+    }
+    XtManageChild(g_depth_label_w);
+    
+    XtManageChild(status_bar);
+
+
     /* -------------------------------------------------------------
      * MAIN FORM CONTAINER (Below MenuBar)
      * ------------------------------------------------------------- */
@@ -1214,6 +1299,11 @@ int main(int argc, char *argv[])
 
     /* Tell XmMainWindow about the MenuBar and Form WorkArea */
     XmMainWindowSetAreas(main_window, menu_bar, NULL, NULL, NULL, form);
+
+    /* Tell main_window that status_bar is the bottom message window */
+    XtVaSetValues(main_window,
+                  XmNmessageWindow, status_bar,
+                  NULL);
 
 
     /* -------------------------------------------------------------
@@ -1263,6 +1353,7 @@ int main(int argc, char *argv[])
     XtManageChild(model_menu_w);
 
     refresh_model_dropdown();
+
 
     /* -------------------------------------------------------------
      * 2. BOTTOM PROMPT & SEND BUTTON
@@ -1316,8 +1407,6 @@ int main(int argc, char *argv[])
     output_text_w = XmCreateScrolledText(form, "outputText", args, n);
     XtManageChild(output_text_w);
 
-    /* Set default placeholder text */
-    /*XmTextSetString(output_text_w, "response goes here\n");*/
 
     /* Show window and enter event loop */
     XtRealizeWidget(toplevel);

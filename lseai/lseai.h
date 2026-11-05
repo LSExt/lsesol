@@ -16,6 +16,9 @@
 #define DEFAULT_MODEL "gemini-3.8-flash"
 #define BUFFER_SIZE 65536
 
+#define true 1
+#define false 0
+
 struct MemoryBuffer {
     char *data;
     size_t size;
@@ -39,9 +42,10 @@ void init_state_file(void);
 char *read_state_file(void);
 const char *get_state_file_path(void);
 void update_state_file(const char *user_prompt, const char *raw_resp_json);
-int should_auto_summarize(const char *filepath, int turn_count);
+int should_auto_summarize(const char *filepath, int turn_count, long *out_size);
 int perform_auto_summarization(const char *filepath, int total_turns);
 int count_conversation_turns(const char *filepath);
+int save_compacted_state_file(const char *filepath, const char *summary_text, int preserve_last_n);
 
 /* summary */
 char *request_gemini_summary(const char *text_to_summarize);
