@@ -131,40 +131,44 @@ int should_auto_summarize(const char *filepath, int turn_count)
 
 int perform_auto_summarization(const char *filepath, int total_turns)
 {
-    /* Determine how many historical turns need compression */
-    int keep_count = (g_config.preserve_turns > 0) ? g_config.preserve_turns : 2;
+    int keep_count = (g_config.preserve_turns > 0) ? g_config.preserve_turns : 4;
     int turns_to_compact = total_turns - keep_count;
 
+    printf("[Auto-Summarize] Starting: total=%d, keep=%d, compacting=%d\n",
+           total_turns, keep_count, turns_to_compact);
+
     if (turns_to_compact <= 0) {
-        return 0; /* Not enough history to compact while respecting preserve_turns */
+        printf("[Auto-Summarize] Aborted: turns_to_compact <= 0\n");
+        return 0;
     }
 
-    printf("[Auto-Summarize] Compacting %d of %d turns (preserving last %d)...\n",
-           turns_to_compact, total_turns, keep_count);
-
-    /* 1. Format the older turns to be digested by the model */
+    /* 1. Extract plain text representation of turns */
     char *text_payload = extract_turns_for_summary(filepath, 0, turns_to_compact);
     if (!text_payload) {
-        fprintf(stderr, "[Auto-Summarize] Error extracting turns\n");
+        fprintf(stderr, "[Auto-Summarize] FAILED: extract_turns_for_summary returned NULL\n");
         return -1;
     }
+    printf("[Auto-Summarize] Extracted %lu bytes of text to summarize\n", (unsigned long)strlen(text_payload));
 
-    /* 2. Execute summary request using your existing summarize.o engine */
+    /* 2. Call API */
+    printf("[Auto-Summarize] Sending summary request to API...\n");
     char *new_summary = request_gemini_summary(text_payload);
     free(text_payload);
 
     if (!new_summary) {
-        fprintf(stderr, "[Auto-Summarize] Model API summary failed\n");
+        fprintf(stderr, "[Auto-Summarize] FAILED: request_gemini_summary returned NULL (check API key / model name!)\n");
         return -1;
     }
+    printf("[Auto-Summarize] Received summary from API (%lu bytes)\n", (unsigned long)strlen(new_summary));
 
-    /* 3. Re-serialize state file: update summary record and prune old turns */
-    if (compact_state_file() != 0) {
-        fprintf(stderr, "[Auto-Summarize] Failed to write updated state file\n");
+    /* 3. Save compacted file */
+    if (save_compacted_state_file(filepath, new_summary, keep_count) != 0) {
+        fprintf(stderr, "[Auto-Summarize] FAILED: save_compacted_state_file returned error\n");
         free(new_summary);
         return -1;
     }
 
     free(new_summary);
+    printf("[Auto-Summarize] SUCCESS: Conversation compacted successfully!\n");
     return 0;
 }

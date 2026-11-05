@@ -65,11 +65,24 @@ char *request_gemini_summary(const char *text_to_summarize)
  */
 int save_compacted_state_file(const char *filepath, const char *summary_text, int preserve_last_n)
 {
-    if (!filepath || !summary_text) return -1;
+    printf("\n=== [DEBUG save_compacted_state_file START] ===\n");
+    printf("[DEBUG] Target Filepath:      %s\n", filepath ? filepath : "(NULL)");
+    printf("[DEBUG] Preserve Last N:      %d\n", preserve_last_n);
+    printf("[DEBUG] Summary Length:       %lu bytes\n", summary_text ? (unsigned long)strlen(summary_text) : 0);
+
+    if (!filepath || !summary_text) {
+        fprintf(stderr, "[DEBUG ERROR] Invalid NULL arguments (filepath=%p, summary_text=%p)\n",
+                (void*)filepath, (void*)summary_text);
+        return -1;
+    }
 
     /* Escape summary text for JSON serialization */
     char *escaped_summary = json_escape(summary_text);
-    if (!escaped_summary) return -1;
+    if (!escaped_summary) {
+        fprintf(stderr, "[DEBUG ERROR] json_escape() returned NULL on summary_text!\n");
+        return -1;
+    }
+    printf("[DEBUG] Escaped Summary Len:  %lu bytes\n", (unsigned long)strlen(escaped_summary));
 
     /*
      * If preserve_last_n > 0, extract the preserved tail turns from original file
@@ -78,40 +91,67 @@ int save_compacted_state_file(const char *filepath, const char *summary_text, in
     char *preserved_tail = NULL;
     if (preserve_last_n > 0) {
         int total_turns = count_conversation_turns(filepath);
+        printf("[DEBUG] Pre-compaction Turns: %d\n", total_turns);
+
         if (total_turns > preserve_last_n) {
             int start_idx = total_turns - preserve_last_n;
-            /* Extract JSON chunk for the preserved turns */
+            printf("[DEBUG] Calling extract_raw_turns_json(start_idx=%d, count=%d)\n",
+                   start_idx, preserve_last_n);
+
             preserved_tail = extract_raw_turns_json(filepath, start_idx, preserve_last_n);
+
+            if (!preserved_tail) {
+                fprintf(stderr, "[DEBUG WARNING] extract_raw_turns_json returned NULL! Recent turns will NOT be preserved.\n");
+            } else {
+                printf("[DEBUG] Extracted preserved tail: %lu bytes\n", (unsigned long)strlen(preserved_tail));
+                /* Print first 80 characters of tail to verify JSON integrity */
+                char preview[81];
+                strncpy(preview, preserved_tail, 80);
+                preview[80] = '\0';
+                printf("[DEBUG] Tail preview: [%s...]\n", preview);
+            }
+        } else {
+            printf("[DEBUG] total_turns (%d) <= preserve_last_n (%d), skipping tail extraction\n",
+                   total_turns, preserve_last_n);
         }
     }
 
+    printf("[DEBUG] Opening file for overwrite: %s\n", filepath);
     FILE *f = fopen(filepath, "w");
     if (!f) {
-        fprintf(stderr, "[Error: Failed to open %s for writing]\n", filepath);
+        perror("[DEBUG ERROR] Failed to open file for writing");
         free(escaped_summary);
         if (preserved_tail) free(preserved_tail);
         return -1;
     }
 
     /* Write summary as foundational context */
-    fprintf(f, "{\"contents\":["
-               "{\"role\":\"user\",\"parts\":[{\"text\":\"SYSTEM CONTEXT / PRIOR DISCUSSION SUMMARY:\\n%s\"}]},"
-               "{\"role\":\"model\",\"parts\":[{\"text\":\"Understood. Context saved.\"}]}",
-            escaped_summary);
+    int w1 = fprintf(f, "{\"contents\":["
+                        "{\"role\":\"user\",\"parts\":[{\"text\":\"SYSTEM CONTEXT / PRIOR DISCUSSION SUMMARY:\\n%s\"}]},"
+                        "{\"role\":\"model\",\"parts\":[{\"text\":\"Understood. Context saved.\"}]}",
+                     escaped_summary);
+    printf("[DEBUG] Wrote baseline context: %d bytes\n", w1);
 
     /* Append preserved recent turns if available */
     if (preserved_tail && strlen(preserved_tail) > 0) {
-        fprintf(f, ",%s", preserved_tail);
+        int w2 = fprintf(f, ",%s", preserved_tail);
+        printf("[DEBUG] Appended preserved tail: %d bytes\n", w2);
         free(preserved_tail);
     }
 
-    fprintf(f, "]}");
+    int w3 = fprintf(f, "]}");
+    printf("[DEBUG] Wrote closing brackets: %d bytes\n", w3);
+
     fclose(f);
     free(escaped_summary);
 
+    /* Verification step: reread disk to confirm turn count */
+    int new_turns = count_conversation_turns(filepath);
+    printf("[DEBUG] Post-compaction Verification: file now has %d turns on disk\n", new_turns);
+    printf("=== [DEBUG save_compacted_state_file END (SUCCESS)] ===\n\n");
+
     return 0;
 }
-
 /*
  * Step 3: Top-level manual / CLI compaction routine
  */

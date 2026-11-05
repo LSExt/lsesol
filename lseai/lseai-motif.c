@@ -344,6 +344,7 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
             
             /* Force X11 to flush so the UI reflects the status update immediately */
             XmUpdateDisplay(toplevel_w);
+            perform_auto_summarization(g_current_conversation, current_turns);
 
             append_conversation_text(output_text_w, "Ready.\n");
         }
