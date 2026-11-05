@@ -72,25 +72,44 @@ char *format_markdown_to_ascii(const char *src)
             p = line_end + 1;
         }
 
+        /* Strip trailing \r (CRLF sanitize) */
+        while (line_len > 0 && line_start[line_len - 1] == '\r') {
+            line_len--;
+        }
+
         /* -------------------------------------------------------------
          * 1. Code Fence Handling (```lang ... ```)
          * ------------------------------------------------------------- */
-        if (line_len >= 3 && strncmp(line_start, "```", 3) == 0) {
-            if (!in_code_block) {
-                char lang[32];
-                size_t lang_len = 0;
-                size_t k;
+        /* Skip leading whitespace to tolerate indented fences */
+        size_t lead_ws = 0;
+        while (lead_ws < line_len && (line_start[lead_ws] == ' ' || line_start[lead_ws] == '\t')) {
+            lead_ws++;
+        }
 
-                for (k = 3; k < line_len && lang_len < 31; k++) {
-                    if (!isspace((unsigned char)line_start[k])) {
-                        lang[lang_len++] = line_start[k];
-                    }
+        if ((line_len - lead_ws) >= 3 && strncmp(line_start + lead_ws, "```", 3) == 0) {
+            if (!in_code_block) {
+                char lang[64];
+                size_t lang_len = 0;
+                size_t k = lead_ws + 3;
+
+                /* Skip whitespace after ``` */
+                while (k < line_len && isspace((unsigned char)line_start[k])) k++;
+
+                /* Capture the language/label cleanly */
+                while (k < line_len && lang_len < (sizeof(lang) - 1)) {
+                    lang[lang_len++] = line_start[k++];
+                }
+                /* Trim trailing spaces from lang */
+                while (lang_len > 0 && isspace((unsigned char)lang[lang_len - 1])) {
+                    lang_len--;
                 }
                 lang[lang_len] = '\0';
 
-                out_idx += sprintf(&out[out_idx], "+--- [ %s%s ] --------------------------------------------------\n",
-                                   lang_len > 0 ? lang : "Code",
-                                   lang_len > 0 ? " Code" : "");
+                if (lang_len > 0) {
+                    out_idx += sprintf(&out[out_idx], "+--- [ %s ] --------------------------------------------------\n", lang);
+                } else {
+                    out_idx += sprintf(&out[out_idx], "+--- [ Code ] --------------------------------------------------\n");
+                }
                 in_code_block = 1;
             } else {
                 out_idx += sprintf(&out[out_idx], "+----------------------------------------------------------------\n");
@@ -99,7 +118,7 @@ char *format_markdown_to_ascii(const char *src)
             continue;
         }
 
-        /* Inside a code block: keep verbatim */
+        /* Inside a code block: keep verbatim without altering code */
         if (in_code_block) {
             memcpy(&out[out_idx], line_start, line_len);
             out_idx += line_len;
@@ -111,7 +130,6 @@ char *format_markdown_to_ascii(const char *src)
          * 2. Light Table Formatter (| col1 | col2 |)
          * ------------------------------------------------------------- */
         if (line_len >= 3 && line_start[0] == '|' && line_start[line_len - 1] == '|') {
-            /* Look ahead to measure columns for the entire table block */
             const char *tbl_ptr = line_start;
             int col_widths[MAX_TABLE_COLS] = {0};
             int num_cols = 0;
@@ -119,9 +137,10 @@ char *format_markdown_to_ascii(const char *src)
             while (*tbl_ptr != '\0') {
                 const char *row_end = strchr(tbl_ptr, '\n');
                 size_t row_len = row_end ? (size_t)(row_end - tbl_ptr) : strlen(tbl_ptr);
+                while (row_len > 0 && tbl_ptr[row_len - 1] == '\r') row_len--;
 
                 if (row_len < 3 || tbl_ptr[0] != '|' || tbl_ptr[row_len - 1] != '|') {
-                    break; /* End of table reached */
+                    break;
                 }
 
                 if (!is_separator_row(tbl_ptr, row_len)) {
@@ -145,7 +164,6 @@ char *format_markdown_to_ascii(const char *src)
                 tbl_ptr = row_end ? (row_end + 1) : (tbl_ptr + row_len);
             }
 
-            /* Render table lines with normalized column widths */
             if (num_cols > 0) {
                 out[out_idx++] = '\n';
 
@@ -156,7 +174,6 @@ char *format_markdown_to_ascii(const char *src)
                     int sep = is_separator_row(row_start, r_len);
 
                     if (sep) {
-                        /* Render divider line: +------+------+ */
                         int c;
                         out[out_idx++] = '+';
                         for (c = 0; c < num_cols; c++) {
@@ -166,7 +183,6 @@ char *format_markdown_to_ascii(const char *src)
                         }
                         out[out_idx++] = '\n';
                     } else {
-                        /* Render content row: | item   | 123    | */
                         int c_idx = 0;
                         const char *cell_start = row_start + 1;
                         const char *pipe;
@@ -188,16 +204,15 @@ char *format_markdown_to_ascii(const char *src)
                         out[out_idx++] = '\n';
                     }
 
-                    /* Advance outer loop past this table line */
                     if (*p == '\0') break;
                     line_start = p;
                     line_end = strchr(p, '\n');
                     line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
                     p = line_end ? (line_end + 1) : (line_start + line_len);
+                    while (line_len > 0 && line_start[line_len - 1] == '\r') line_len--;
 
-                    /* If the next line isn't part of the table, stop eating lines */
                     if (line_len < 3 || line_start[0] != '|' || line_start[line_len - 1] != '|') {
-                        p = line_start; /* Rewind so standard parser picks up this next line */
+                        p = line_start;
                         break;
                     }
                 }
