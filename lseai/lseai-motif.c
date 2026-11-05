@@ -430,8 +430,8 @@ static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
 
 Widget create_main_menubar(Widget parent)
 {
-    Widget menu_bar, conv_menu_pane, conv_cascade, compress_item;
-    XmString label_str;
+    Widget menu_bar, menu_context, cascade_context, compress_item;
+    XmString s_context;
     Widget menu_edit, cascade_edit;
     XmString s_edit;
     int n;
@@ -468,21 +468,19 @@ Widget create_main_menubar(Widget parent)
 
 
     /* "Conversation" Pulldown */
-    conv_menu_pane = XmCreatePulldownMenu(menu_bar, "convMenuPane", NULL, 0);
+    menu_context = XmCreatePulldownMenu(menu_bar, "menuContext", NULL, 0);
 
     /* Menu Item: Compress */
-    compress_item = XmCreatePushButton(conv_menu_pane, "Compress (Summarize History)", NULL, 0);
-    XtManageChild(compress_item);
-    XtAddCallback(compress_item, XmNactivateCallback, compress_cb, NULL);
+    add_menu_item(menu_context, "Summarize and compress history", NULL, NULL, compress_cb, NULL);
 
-    /* Cascade button on the menu bar pointing to the pane */
-    label_str = XmStringCreateLocalized("Conversation");
-    n = 0;
-    XtSetArg(args[n], XmNsubMenuId, conv_menu_pane); n++;
-    XtSetArg(args[n], XmNlabelString, label_str); n++;
-    conv_cascade = XmCreateCascadeButton(menu_bar, "convCascade", args, n);
-    XtManageChild(conv_cascade);
-    XmStringFree(label_str); /* Free your copy to prevent a memory leak */
+    s_context = XmStringCreateLocalized("Conversation");
+    cascade_context = XtVaCreateManagedWidget("cascadeContext",
+        xmCascadeButtonWidgetClass, menu_bar,
+        XmNlabelString, s_context,
+        XmNmnemonic, 'C',
+        XmNsubMenuId, menu_context,
+        NULL);
+    XmStringFree(s_context);
 
     return menu_bar;
 }
