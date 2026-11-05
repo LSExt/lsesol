@@ -428,6 +428,65 @@ static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
     /* TODO: Call backend helper to reload previous messages from this file into output_text_w */
 }
 
+Widget create_main_menubar(Widget parent)
+{
+    Widget menu_bar, conv_menu_pane, conv_cascade, compress_item;
+    XmString label_str;
+    Widget menu_edit, cascade_edit;
+    XmString s_edit;
+    int n;
+    Arg args[20];
+
+    /* -------------------------------------------------------------
+     * TOP MENU BAR (XmMenuBar)
+     * ------------------------------------------------------------- */
+    menu_bar = XmCreateMenuBar(parent, "menuBar", NULL, 0);
+    XtManageChild(menu_bar);
+
+    /* -------------------------------------------------------------
+     * 2. EDIT MENU
+     * ------------------------------------------------------------- */
+    menu_edit = XmCreatePulldownMenu(menu_bar, "menuEdit", NULL, 0);
+
+    add_menu_item(menu_edit, "Cut", NULL, NULL, cb_menu_edit_cut, NULL);
+    add_menu_item(menu_edit, "Copy", NULL, NULL, cb_menu_edit_copy, NULL);
+    add_menu_item(menu_edit, "Paste", NULL, NULL, cb_menu_edit_paste, NULL);
+    add_menu_separator(menu_edit);
+    add_menu_item(menu_edit, "Select All", "Ctrl<Key>A", "Ctrl+A", cb_menu_edit_select_all, NULL);
+    add_menu_separator(menu_edit);
+    add_menu_item(menu_edit, "Clear Screen", NULL, NULL, cb_menu_edit_clear_screen, NULL);
+    add_menu_item(menu_edit, "Clear Prompt Box", NULL, NULL, cb_menu_edit_clear_prompt, NULL);
+
+    s_edit = XmStringCreateLocalized("Edit");
+    cascade_edit = XtVaCreateManagedWidget("cascadeEdit",
+        xmCascadeButtonWidgetClass, menu_bar,
+        XmNlabelString, s_edit,
+        XmNmnemonic, 'E',
+        XmNsubMenuId, menu_edit,
+        NULL);
+    XmStringFree(s_edit);
+
+
+    /* "Conversation" Pulldown */
+    conv_menu_pane = XmCreatePulldownMenu(menu_bar, "convMenuPane", NULL, 0);
+
+    /* Menu Item: Compress */
+    compress_item = XmCreatePushButton(conv_menu_pane, "Compress (Summarize History)", NULL, 0);
+    XtManageChild(compress_item);
+    XtAddCallback(compress_item, XmNactivateCallback, compress_cb, NULL);
+
+    /* Cascade button on the menu bar pointing to the pane */
+    label_str = XmStringCreateLocalized("Conversation");
+    n = 0;
+    XtSetArg(args[n], XmNsubMenuId, conv_menu_pane); n++;
+    XtSetArg(args[n], XmNlabelString, label_str); n++;
+    conv_cascade = XmCreateCascadeButton(menu_bar, "convCascade", args, n);
+    XtManageChild(conv_cascade);
+    XmStringFree(label_str); /* Free your copy to prevent a memory leak */
+
+    return menu_bar;
+}
+
 int main(int argc, char *argv[])
 {
     XtAppContext app_context;
@@ -435,11 +494,8 @@ int main(int argc, char *argv[])
     Widget top_bar, conv_pane, model_pane, new_btn;
     Widget btn_sample_chat, btn_model;
     Widget send_btn;
+    Widget menu_bar;
 
-    Widget menu_bar, conv_menu_pane, conv_cascade, compress_item;
-    XmString label_str;
-    Widget menu_edit, cascade_edit;
-    XmString s_edit;
 
     
     Arg args[20];
@@ -520,52 +576,8 @@ int main(int argc, char *argv[])
     main_window = XmCreateMainWindow(toplevel, "mainWindow", NULL, 0);
     XtManageChild(main_window);
 
-    /* -------------------------------------------------------------
-     * TOP MENU BAR (XmMenuBar)
-     * ------------------------------------------------------------- */
-    menu_bar = XmCreateMenuBar(main_window, "menuBar", NULL, 0);
-    XtManageChild(menu_bar);
+    menu_bar = create_main_menubar( main_window);
 
-    /* -------------------------------------------------------------
-     * 2. EDIT MENU
-     * ------------------------------------------------------------- */
-    menu_edit = XmCreatePulldownMenu(menu_bar, "menuEdit", NULL, 0);
-
-    add_menu_item(menu_edit, "Cut", NULL, NULL, cb_menu_edit_cut, NULL);
-    add_menu_item(menu_edit, "Copy", NULL, NULL, cb_menu_edit_copy, NULL);
-    add_menu_item(menu_edit, "Paste", NULL, NULL, cb_menu_edit_paste, NULL);
-    add_menu_separator(menu_edit);
-    add_menu_item(menu_edit, "Select All", "Ctrl<Key>A", "Ctrl+A", cb_menu_edit_select_all, NULL);
-    add_menu_separator(menu_edit);
-    add_menu_item(menu_edit, "Clear Screen", NULL, NULL, cb_menu_edit_clear_screen, NULL);
-    add_menu_item(menu_edit, "Clear Prompt Box", NULL, NULL, cb_menu_edit_clear_prompt, NULL);
-
-    s_edit = XmStringCreateLocalized("Edit");
-    cascade_edit = XtVaCreateManagedWidget("cascadeEdit",
-        xmCascadeButtonWidgetClass, menu_bar,
-        XmNlabelString, s_edit,
-        XmNmnemonic, 'E',
-        XmNsubMenuId, menu_edit,
-        NULL);
-    XmStringFree(s_edit);
-
-
-    /* "Conversation" Pulldown */
-    conv_menu_pane = XmCreatePulldownMenu(menu_bar, "convMenuPane", NULL, 0);
-
-    /* Menu Item: Compress */
-    compress_item = XmCreatePushButton(conv_menu_pane, "Compress (Summarize History)", NULL, 0);
-    XtManageChild(compress_item);
-    XtAddCallback(compress_item, XmNactivateCallback, compress_cb, NULL);
-
-    /* Cascade button on the menu bar pointing to the pane */
-    label_str = XmStringCreateLocalized("Conversation");
-    n = 0;
-    XtSetArg(args[n], XmNsubMenuId, conv_menu_pane); n++;
-    XtSetArg(args[n], XmNlabelString, label_str); n++;
-    conv_cascade = XmCreateCascadeButton(menu_bar, "convCascade", args, n);
-    XtManageChild(conv_cascade);
-    XmStringFree(label_str); /* Free your copy to prevent a memory leak */
 
     /* -------------------------------------------------------------
      * MAIN FORM CONTAINER (Below MenuBar)
