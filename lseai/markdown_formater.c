@@ -74,41 +74,86 @@ static int match_and_replace_arrow(const char **src, char **dst, size_t *dst_rem
     return 0;
 }
 
-/**
- * Formats a regular text line into out buffer:
- * - Replaces LaTeX/UTF-8 arrows with ASCII equivalents
- * - Strips or preserves inline markers safely
- */
-static size_t format_prose_line(const char *src, size_t src_len, char *dst, size_t dst_max) {
-    size_t s = 0;
-    size_t d = 0;
 
-    while (s < src_len && d < (dst_max - 1)) {
-        /* Check for Arrow tokens */
-        if (src[s] == '$' || src[s] == '\\' || (unsigned char)src[s] == 0xE2) {
-            int matched = 0;
-            const ArrowRule *rule;
-            for (rule = ARROW_RULES; rule->token != NULL; rule++) {
-                if ((src_len - s) >= rule->token_len &&
-                    memcmp(&src[s], rule->token, rule->token_len) == 0) {
-                    if (d + rule->repr_len < dst_max) {
-                        memcpy(&dst[d], rule->ascii_repr, rule->repr_len);
-                        d += rule->repr_len;
-                    }
-                    s += rule->token_len;
-                    matched = 1;
-                    break;
+static size_t format_prose_line(const char *src, size_t len, char *dst, size_t max_len)
+{
+    size_t i = 0;
+    size_t out_idx = 0;
+
+    while (i < len && out_idx + 4 < max_len) {
+        /* Check if we are at '$' or '\' */
+        if (src[i] == '$' || src[i] == '\\') {
+            size_t start = i;
+            int has_leading_dollar = (src[i] == '$');
+            if (has_leading_dollar) i++;
+
+            if (i < len && src[i] == '\\') {
+                const char *cmd = &src[i];
+                size_t rem = len - i;
+
+                /* \rightarrow or \to */
+                if ((rem >= 11 && strncmp(cmd, "\\rightarrow", 11) == 0) ||
+                    (rem >= 3  && strncmp(cmd, "\\to", 3) == 0)) {
+                    size_t cmd_len = (cmd[1] == 'r') ? 11 : 3;
+                    i += cmd_len;
+                    if (has_leading_dollar && i < len && src[i] == '$') i++;
+                    dst[out_idx++] = '-';
+                    dst[out_idx++] = '>';
+                    continue;
+                }
+                /* \Rightarrow */
+                if (rem >= 11 && strncmp(cmd, "\\Rightarrow", 11) == 0) {
+                    i += 11;
+                    if (has_leading_dollar && i < len && src[i] == '$') i++;
+                    dst[out_idx++] = '=';
+                    dst[out_idx++] = '>';
+                    continue;
+                }
+                /* \leftarrow */
+                if (rem >= 10 && strncmp(cmd, "\\leftarrow", 10) == 0) {
+                    i += 10;
+                    if (has_leading_dollar && i < len && src[i] == '$') i++;
+                    dst[out_idx++] = '<';
+                    dst[out_idx++] = '-';
+                    continue;
+                }
+                /* \Leftarrow */
+                if (rem >= 10 && strncmp(cmd, "\\Leftarrow", 10) == 0) {
+                    i += 10;
+                    if (has_leading_dollar && i < len && src[i] == '$') i++;
+                    dst[out_idx++] = '<';
+                    dst[out_idx++] = '=';
+                    continue;
+                }
+                /* \leftrightarrow */
+                if (rem >= 15 && strncmp(cmd, "\\leftrightarrow", 15) == 0) {
+                    i += 15;
+                    if (has_leading_dollar && i < len && src[i] == '$') i++;
+                    dst[out_idx++] = '<';
+                    dst[out_idx++] = '-';
+                    dst[out_idx++] = '>';
+                    continue;
+                }
+                /* \Leftrightarrow */
+                if (rem >= 15 && strncmp(cmd, "\\Leftrightarrow", 15) == 0) {
+                    i += 15;
+                    if (has_leading_dollar && i < len && src[i] == '$') i++;
+                    dst[out_idx++] = '<';
+                    dst[out_idx++] = '=';
+                    dst[out_idx++] = '>';
+                    continue;
                 }
             }
-            if (matched) continue;
+            /* Not a recognized arrow; rewind to where we started */
+            i = start;
         }
 
-        /* Normal character copy */
-        dst[d++] = src[s++];
+        /* Normal ASCII copy */
+        dst[out_idx++] = src[i++];
     }
-    return d;
-}
 
+    return out_idx;
+}
 /* Trims leading and trailing spaces from a cell */
 static void trim_cell(const char *src, size_t len, char *dest, size_t dest_cap)
 {
