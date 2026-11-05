@@ -38,6 +38,10 @@ static Widget model_pane_w;
 static Widget top_bar_w;
 static Widget toplevel_w;
 
+/* Track search dialog handle and the last searched term */
+static Widget g_find_dialog = NULL;
+static char g_last_search_term[256] = "";
+
 
 void force_motif_render(Widget w)
 {
@@ -151,6 +155,127 @@ static void add_menu_separator(Widget parent)
     XtManageChild(sep);
 }
 
+/************ Edit callbacks **********/
+
+/* Callback executed when clicking "Find Next" (OK button) */
+static void find_execute_cb(Widget dialog, XtPointer client_data, XtPointer call_data)
+{
+    Widget text_entry = XmSelectionBoxGetChild(dialog, XmDIALOG_TEXT);
+    char *search_str = XmTextGetString(text_entry);
+
+    if (!search_str || strlen(search_str) == 0) {
+        if (search_str) XtFree(search_str);
+        return;
+    }
+
+    /* Save last searched term */
+    strncpy(g_last_search_term, search_str, sizeof(g_last_search_term) - 1);
+    g_last_search_term[sizeof(g_last_search_term) - 1] = '\0';
+
+    if (!output_text_w) {
+        XtFree(search_str);
+        return;
+    }
+
+    /* Determine starting position: search forward from the current insertion or end of selection */
+    XmTextPosition start_pos = 0;
+    XmTextPosition left_sel, right_sel;
+    
+    if (XmTextGetSelectionPosition(output_text_w, &left_sel, &right_sel)) {
+        start_pos = right_sel; /* Start searching just after active selection */
+    } else {
+        start_pos = XmTextGetInsertionPosition(output_text_w);
+    }
+
+    XmTextPosition found_pos = 0;
+    Boolean found = XmTextFindString(output_text_w, 
+                                     start_pos, 
+                                     search_str, 
+                                     XmTEXT_FORWARD, 
+                                     &found_pos);
+
+    /* If not found towards the bottom, wrap search back from position 0 */
+    if (!found && start_pos > 0) {
+        found = XmTextFindString(output_text_w, 
+                                 0, 
+                                 search_str, 
+                                 XmTEXT_FORWARD, 
+                                 &found_pos);
+    }
+
+    if (found) {
+        /* Highlight the found text */
+        XmTextPosition end_pos = found_pos + strlen(search_str);
+        XmTextSetSelection(output_text_w, found_pos, end_pos, XtLastTimestampProcessed(XtDisplay(output_text_w)));
+        
+        /* Move insertion cursor and scroll view into position */
+        XmTextSetInsertionPosition(output_text_w, end_pos);
+        XmTextShowPosition(output_text_w, found_pos);
+
+        /* Do not dismiss dialog so user can press Enter / click OK repeatedly for "Find Next" */
+    } else {
+        /* Bell / beep on failure */
+        XBell(XtDisplay(dialog), 0);
+    }
+
+    XtFree(search_str);
+}
+
+static void find_cancel_cb(Widget dialog, XtPointer client_data, XtPointer call_data)
+{
+    XtUnmanageChild(dialog);
+}
+
+/* Menu Callback: Edit -> Find */
+void cb_menu_edit_find(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    if (g_find_dialog == NULL) {
+        Arg args[10];
+        int n = 0;
+        XmString title = XmStringCreateLocalized("Find Text");
+        XmString prompt = XmStringCreateLocalized("Find what:");
+        XmString ok_label = XmStringCreateLocalized("Find Next");
+
+        XtSetArg(args[n], XmNdialogTitle, title); n++;
+        XtSetArg(args[n], XmNselectionLabelString, prompt); n++;
+        XtSetArg(args[n], XmNokLabelString, ok_label); n++;
+        XtSetArg(args[n], XmNautoUnmanage, False); n++; /* Stay open for "Find Next" clicks */
+        XtSetArg(args[n], XmNdialogStyle, XmDIALOG_MODELESS); n++; /* Modeless allows viewing main text */
+
+        g_find_dialog = XmCreatePromptDialog(toplevel_w, "findDialog", args, n);
+
+        XmStringFree(title);
+        XmStringFree(prompt);
+        XmStringFree(ok_label);
+
+        /* Hide the Help button */
+        XtUnmanageChild(XmSelectionBoxGetChild(g_find_dialog, XmDIALOG_HELP_BUTTON));
+
+        /* Connect callbacks */
+        XtAddCallback(g_find_dialog, XmNokCallback, find_execute_cb, NULL);
+        XtAddCallback(g_find_dialog, XmNcancelCallback, find_cancel_cb, NULL);
+    }
+
+    /* Pre-fill with the previous search term, or seed with whatever text is selected */
+    Widget text_entry = XmSelectionBoxGetChild(g_find_dialog, XmDIALOG_TEXT);
+    if (text_entry) {
+        char *sel = XmTextGetSelection(output_text_w);
+        if (sel && strlen(sel) > 0 && strlen(sel) < sizeof(g_last_search_term)) {
+            XmTextSetString(text_entry, sel);
+            XtFree(sel);
+        } else if (strlen(g_last_search_term) > 0) {
+            XmTextSetString(text_entry, g_last_search_term);
+        }
+        /* Select the input text inside the dialog so typing replaces it */
+        XmTextSetSelection(text_entry, 0, XmTextGetLastPosition(text_entry), 
+                           XtLastTimestampProcessed(XtDisplay(text_entry)));
+    }
+
+    /* Pop up the dialog */
+    XtManageChild(g_find_dialog);
+}
+
+
 static void cb_menu_edit_cut(Widget w, XtPointer client_data, XtPointer call_data)
 {
     Widget focus = XmGetFocusWidget(toplevel_w);
@@ -192,6 +317,8 @@ static void cb_menu_edit_clear_prompt(Widget w, XtPointer client_data, XtPointer
 {
     XmTextSetString(input_text_w, "");
 }
+
+/************ EDIT callbacks *******/
 
 
 /* Callback: Manual Conversation Compaction */
@@ -973,6 +1100,8 @@ Widget create_main_menubar(Widget parent)
     add_menu_item(menu_edit, "Cut", NULL, NULL, cb_menu_edit_cut, NULL);
     add_menu_item(menu_edit, "Copy", NULL, NULL, cb_menu_edit_copy, NULL);
     add_menu_item(menu_edit, "Paste", NULL, NULL, cb_menu_edit_paste, NULL);
+    add_menu_separator(menu_edit);
+    add_menu_item(menu_edit, "Find...", "Ctrl<Key>f:", "Ctrl+F", cb_menu_edit_find, NULL);
     add_menu_separator(menu_edit);
     add_menu_item(menu_edit, "Select All", "Ctrl<Key>A", "Ctrl+A", cb_menu_edit_select_all, NULL);
     add_menu_separator(menu_edit);
