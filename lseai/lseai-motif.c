@@ -405,7 +405,10 @@ static void cb_menu_edit_capture_image(Widget w, XtPointer client_data, XtPointe
     char jpeg_file[PATH_MAX];
     get_temp_jpeg_path( jpeg_file, PATH_MAX);
     capture_window_to_jpeg( w, jpeg_file );
-
+    add_attachment( jpeg_file );
+    char msg_file_attached[64];
+    snprintf( msg_file_attached, sizeof(msg_file_attached), "attached %s", jpeg_file );
+    set_status_message( msg_file_attached);
 }
 
 /************ EDIT callbacks *******/
@@ -622,52 +625,75 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
         int has_entries = (strstr(current_state, "\"role\"") != NULL);
         char *escaped_prompt = json_escape(prompt);
 
-        /* Construct full JSON payload with complete history */
-        size_t payload_size = strlen(current_state) + (escaped_prompt ? strlen(escaped_prompt) : 0) + 512;
-        char *full_payload = (char *)malloc(payload_size * sizeof(char));
+
+
+        /* 1. Generate Base64 string for all attachments */
+        char *attach_parts = build_attachment_parts_json();
+        size_t attach_len = (attach_parts != NULL) ? strlen(attach_parts) : 0;
+
+        /* 2. Generate lightweight tag for state history, e.g. [Image Attached: ...] */
+        char *history_tags =(char *) build_attachment_history_tag();
+
+        /* 3. Compute dynamic buffer size with the full Base64 payload accounted for */
+        size_t payload_size = strlen(current_state)
+                            + (escaped_prompt ? strlen(escaped_prompt) : 0)
+                            + attach_len
+                            + 2048;
+
+        char *full_payload = (char *)malloc(payload_size);
         if (!full_payload) {
-            fprintf(stderr, "Memory allocation failed for payload.\n");
+            fprintf(stderr, "Memory allocation failed for payload: %lu bytes\n", (unsigned long)payload_size);
             free(current_state);
             if (escaped_prompt) free(escaped_prompt);
-            if (prompt) {
-                XtFree(prompt);
-            }
+            if (attach_parts) free(attach_parts);
+            if (history_tags) free(history_tags);
+            if (prompt) XtFree(prompt);
             return;
         }
+
         force_motif_render(output_text_w);
-        sprintf(full_payload, "%s%s{\"role\":\"user\",\"parts\":[{\"text\":\"%s\"}]}]}",
-                current_state, (has_entries ? "," : ""), escaped_prompt ? escaped_prompt : "");
+
+        /* 4. Use snprintf for bounded write */
+        snprintf(full_payload, payload_size,
+                 "%s%s{\"role\":\"user\",\"parts\":[%s{\"text\":\"%s\"}]}]}",
+                 current_state,
+                 (has_entries ? "," : ""),
+                 (attach_parts ? attach_parts : ""),
+                 (escaped_prompt ? escaped_prompt : ""));
+        /* Clear base64 buffer and global attachment array */
+        if (attach_parts){
+           free(attach_parts);
+           attach_parts = NULL;
+        }
+        clear_attachments(); 
 
         /* Trigger auto-summarization if thresholds are exceeded */
         int current_turns = count_conversation_turns(g_current_conversation);
         int did_compact = false;
         long out_file_size = 0L;
         int do_summarize = should_auto_summarize(g_current_conversation, current_turns, &out_file_size);
-        set_depth_display(current_turns, out_file_size); 
+        set_depth_display(current_turns, out_file_size);
         if ( do_summarize ){
             /* Update Motif status label or cursor if available */
             set_status_message("Status: Compacting conversation history...");
-            
+ 
             /* Force X11 to flush so the UI reflects the status update immediately */
             XmUpdateDisplay(toplevel_w);
             perform_auto_summarization(g_current_conversation, current_turns);
-
+ 
             set_status_message("Status: Done compacting");
             did_compact = true;
         }
         /* Force render before the network request blocks the loop */
         force_motif_render(output_text_w);
-
+ 
         printf("Thinking...\n");
         if( did_compact ) set_status_message( "Status: Done compacting. Thinking...");
         else set_status_message("Thinking...");
         char *response_json = send_request(full_payload);
-
-
         if (response_json) {
             char *text = extract_text_field(response_json);
             if (text) {
-
                 char *ascii_text = clean_to_ascii_string(text);
                 if (ascii_text) {
                     /* Format Markdown headers, bullets, and code boxes */
@@ -682,19 +708,24 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
                     /* Clean up heap */
                     free(ascii_text);
                 }
-                
-                update_state_file(prompt, response_json);
+                if (history_tags) {
+                    size_t combined_len = strlen(history_tags) + strlen(prompt) + 2;
+                    char *history_prompt = (char *)malloc(combined_len);
+                    if (history_prompt) {
+                        snprintf(history_prompt, combined_len, "%s%s", history_tags, prompt);
+                        update_state_file(history_prompt, response_json);
+                        free(history_prompt);
+                    }
+                } else {
+                    update_state_file(prompt, response_json);
+                }
+
                 free(text);
-            } else {
-                /* Fall back to printing raw response if parsing ever fails */
-                printf("\nGemini (Raw Output):\n");
-                /*print_formatted_response(response_json);*/
-                printf(response_json);
-                printf("\n");
             }
             free(response_json);
         }
 
+        if (history_tags) free(history_tags);
         free(current_state);
         if (escaped_prompt) free(escaped_prompt);
         free(full_payload);

@@ -49,6 +49,7 @@ int save_compacted_state_file(const char *filepath, const char *summary_text, in
 
 /* image processing */
 int write_rgb_to_jpeg_file(const char *filename, unsigned char *rgb, int width, int height, int quality);
+char *build_attachment_parts_json(void);
 
 /* summary */
 char *request_gemini_summary(const char *text_to_summarize);
