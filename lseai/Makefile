@@ -23,24 +23,39 @@ MOTIF_LDFLAGS= -L/usr/dt/lib -R/usr/dt/lib \
                $(BASE_LDFLAGS)
 
 # -------------------------------------------------------------
-# Libraries
+# Libraries: Dynamic (Default)
 # -------------------------------------------------------------
-# Shared backend networking / crypto / compat
 BASE_LIBS    = -lgen -lsocket -lnsl -lcurl -lssl -lcrypto -llsecompat 
-
-# CLI extra libraries (readline, terminal control)
 CLI_LIBS     = -lreadline -lcurses $(BASE_LIBS)
-
-# Motif extra libraries (Motif, Xt, X11)
 MOTIF_LIBS   = -lXm -lXt -lX11 $(BASE_LIBS)
+
+# -------------------------------------------------------------
+# Libraries: Static (Portable Redistribution)
+# Direct path references to .a archives prevent needing /usr/local/lse on target machine
+# -------------------------------------------------------------
+STATIC_LSE_LIBS  = $(PREFIX)/lib/libcurl.a \
+                   $(PREFIX)/lib/libssl.a \
+                   $(PREFIX)/lib/libcrypto.a \
+                   $(PREFIX)/lib/liblsecompat.a \
+                   -lsocket -lnsl -lgen -ldl
+
+STATIC_CLI_LIBS  = $(PREFIX)/lib/libreadline.a \
+                   -lcurses \
+                   $(STATIC_LSE_LIBS)
+
+# Note: /usr/dt/lib/libXm.a can be used if you want Motif baked into the binary
+STATIC_MOTIF_LIBS= -L/usr/dt/lib -L/usr/openwin/lib \
+                   -lXm -lXt -lX11 \
+                   $(STATIC_LSE_LIBS)
 
 # -------------------------------------------------------------
 # Targets & Object Groups
 # -------------------------------------------------------------
-CLI_TARGET   = lseai
-MOTIF_TARGET = lseai-motif
+CLI_TARGET        = lseai
+MOTIF_TARGET      = lseai-motif
+CLI_STATIC_TARGET = lseai.static
+MOTIF_STATIC_TARGET= lseai-motif.static
 
-# Group 1: Shared Core Backend Objects (C99 + Wall)
 COMMON_OBJS  = summarize.o \
                state_file.o \
                request.o \
@@ -51,42 +66,51 @@ COMMON_OBJS  = summarize.o \
                config.o \
                globals.o
 
-# Group 2: CLI-specific Objects (C99 + Wall)
 CLI_OBJS     = lseai.o \
-               read_prompt.o \
+               read_prompt.o
 
-# Group 3: Motif GUI-specific Objects (Add more GUI .o files here later)
 MOTIF_OBJS   = lseai-motif.o 
 
-.PHONY: all clean cli motif
+.PHONY: all clean cli motif static cli-static motif-static
 
-# Default: build both
+# Default: build dynamic versions
 all: $(CLI_TARGET) $(MOTIF_TARGET)
 
 cli: $(CLI_TARGET)
 
 motif: $(MOTIF_TARGET)
 
+# Build standalone / portable binaries for redistribution
+static: $(CLI_STATIC_TARGET) $(MOTIF_STATIC_TARGET)
+
+cli-static: $(CLI_STATIC_TARGET)
+
+motif-static: $(MOTIF_STATIC_TARGET)
+
 # -------------------------------------------------------------
-# Linking Binaries
+# Linking Binaries (Dynamic)
 # -------------------------------------------------------------
-# 1. Build CLI executable (no X11/Motif linked)
 $(CLI_TARGET): $(CLI_OBJS) $(COMMON_OBJS)
 	$(CC) $(CLI_OBJS) $(COMMON_OBJS) -o $(CLI_TARGET) $(BASE_LDFLAGS) $(CLI_LIBS)
 
-# 2. Build Motif GUI executable
 $(MOTIF_TARGET): $(MOTIF_OBJS) $(COMMON_OBJS)
 	$(CC) $(MOTIF_OBJS) $(COMMON_OBJS) -o $(MOTIF_TARGET) $(MOTIF_LDFLAGS) $(MOTIF_LIBS)
 
 # -------------------------------------------------------------
+# Linking Binaries (Semi-Static / Portable)
+# -------------------------------------------------------------
+$(CLI_STATIC_TARGET): $(CLI_OBJS) $(COMMON_OBJS)
+	$(CC) $(CLI_OBJS) $(COMMON_OBJS) -o $(CLI_STATIC_TARGET) $(STATIC_CLI_LIBS)
+
+$(MOTIF_STATIC_TARGET): $(MOTIF_OBJS) $(COMMON_OBJS)
+	$(CC) $(MOTIF_OBJS) $(COMMON_OBJS) -o $(MOTIF_STATIC_TARGET) $(MOTIF_LDFLAGS) $(STATIC_MOTIF_LIBS)
+
+# -------------------------------------------------------------
 # Compilation Rules
 # -------------------------------------------------------------
-# Rule for Motif GUI files: uses MOTIF_CFLAGS
-# (When you add new GUI files like gui_dialogs.c, list them here or in a pattern)
 lseai-motif.o: lseai-motif.c
 	$(CC) $(MOTIF_CFLAGS) -c $< -o $@
 
-# Pattern rule for all standard engine and CLI C files: uses CFLAGS (-std=gnu99 -Wall)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -94,4 +118,6 @@ lseai-motif.o: lseai-motif.c
 # Cleanup
 # -------------------------------------------------------------
 clean:
-	rm -f $(CLI_OBJS) $(MOTIF_OBJS) $(COMMON_OBJS) $(CLI_TARGET) $(MOTIF_TARGET)
+	rm -f $(CLI_OBJS) $(MOTIF_OBJS) $(COMMON_OBJS) \
+		$(CLI_TARGET) $(MOTIF_TARGET) \
+		$(CLI_STATIC_TARGET) $(MOTIF_STATIC_TARGET)

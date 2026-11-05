@@ -496,7 +496,7 @@ void refresh_thread_dropdown(void)
     char *initial_chat_name = NULL;
 
     /* ------------------------------------------------------------------ */
-    /* 1. Tear down existing entries in the Pulldown Menu Pane            */
+    /* Tear down existing entries in the Pulldown Menu Pane            */
     /* ------------------------------------------------------------------ */
     if (conv_pane_w != NULL) {
         WidgetList children = NULL;
@@ -524,31 +524,54 @@ void refresh_thread_dropdown(void)
     }
 
     /* ------------------------------------------------------------------ */
-    /* 2. Retrieve conversation list from configuration subsystem         */
+    /* Retrieve conversation list from configuration subsystem         */
     /* ------------------------------------------------------------------ */
     chats = config_list_conversations(&chat_count);
 
     if (chat_count == 0) {
         /* No saved files found: initialize "default" */
+        char pad_buf[64];
+        XmString xms;
+        Arg bargs[5];
+        int bn = 0;
+
         initial_chat_name = strdup("default");
-        initial_btn = XmCreatePushButton(conv_pane_w, initial_chat_name, NULL, 0);
+
+        /* Pad display string to at least 25 characters */
+        snprintf(pad_buf, sizeof(pad_buf), "%-25s", initial_chat_name);
+        xms = XmStringCreateLocalized(pad_buf);
+
+        XtSetArg(bargs[bn], XmNlabelString, xms); bn++;
+        initial_btn = XmCreatePushButton(conv_pane_w, initial_chat_name, bargs, bn);
+        XmStringFree(xms);
 
         /* Bind free() to widget destruction lifecycle */
-        XtAddCallback(initial_btn, XmNdestroyCallback, 
+        XtAddCallback(initial_btn, XmNdestroyCallback,
                       conv_btn_destroy_cb, (XtPointer)initial_chat_name);
-        XtAddCallback(initial_btn, XmNactivateCallback, 
+        XtAddCallback(initial_btn, XmNactivateCallback,
                       conv_select_cb, (XtPointer)initial_chat_name);
         XtManageChild(initial_btn);
     } else {
         int i;
         for (i = 0; i < chat_count; i++) {
             char *saved_name = strdup(chats[i]);
-            Widget btn = XmCreatePushButton(conv_pane_w, saved_name, NULL, 0);
+            char pad_buf[64];
+            XmString xms;
+            Arg bargs[5];
+            int bn = 0;
+
+            /* Pad display string to at least 25 characters */
+            snprintf(pad_buf, sizeof(pad_buf), "%-25s", saved_name);
+            xms = XmStringCreateLocalized(pad_buf);
+
+            XtSetArg(bargs[bn], XmNlabelString, xms); bn++;
+            Widget btn = XmCreatePushButton(conv_pane_w, saved_name, bargs, bn);
+            XmStringFree(xms);
 
             /* Bind free() to widget destruction lifecycle */
-            XtAddCallback(btn, XmNdestroyCallback, 
+            XtAddCallback(btn, XmNdestroyCallback,
                           conv_btn_destroy_cb, (XtPointer)saved_name);
-            XtAddCallback(btn, XmNactivateCallback, 
+            XtAddCallback(btn, XmNactivateCallback,
                           conv_select_cb, (XtPointer)saved_name);
             XtManageChild(btn);
 
@@ -557,16 +580,11 @@ void refresh_thread_dropdown(void)
                 initial_chat_name = saved_name;
             }
         }
-        
-        /* 
-         * If config_list_conversations dynamically allocates its string table,
-         * free the container array or items here according to its contract.
-         */
-    }
+    } 
     config_free_conversation_list( chats, chat_count);
 
     /* ------------------------------------------------------------------ */
-    /* 3. Synchronize OptionMenu UI label and Active State File           */
+    /* Synchronize OptionMenu UI label and Active State File           */
     /* ------------------------------------------------------------------ */
     if (initial_btn != NULL && conv_menu_w!= NULL) {
         /*
@@ -873,13 +891,6 @@ static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
     snprintf( msg, sizeof( msg )-1, "-- Conversation to: %s, file: %s --\n", chat_name, g_current_conversation );
     append_conversation_text(output_text_w, msg );
 
-   /* 
-    append_conversation_text(output_text_w, "--- Conversation to: ");
-    append_conversation_text(output_text_w, chat_name);
-    append_conversation_text(output_text_w, "in file :");
-    append_conversation_text(output_text_w, g_current_conversation);
-    append_conversation_text(output_text_w, "---\n");
-*/
 
     /* TODO: Call backend helper to reload previous messages from this file into output_text_w */
 }
@@ -1062,11 +1073,14 @@ int main(int argc, char *argv[])
     conv_pane = XmCreatePulldownMenu(top_bar, "convPane", NULL, 0);
     conv_pane_w = conv_pane;
 
+
     n = 0;
     XtSetArg(args[n], XmNlabelString, XmStringCreateLocalized("Chat / Context:")); n++;
     XtSetArg(args[n], XmNsubMenuId, conv_pane); n++;
     conv_menu_w = XmCreateOptionMenu(top_bar, "convOptionMenu", args, n);
     XtManageChild(conv_menu_w);
+
+    
 
     refresh_thread_dropdown();
 
@@ -1120,7 +1134,7 @@ int main(int argc, char *argv[])
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNmarginWidth, 12); n++;
-    XtSetArg(args[n], XmNmarginHeight, 8); n++;
+    XtSetArg(args[n], XmNmarginHeight, 36); n++;
     send_btn = XmCreatePushButton(form, "Send", args, n);
     XtManageChild(send_btn);
     XtAddCallback(send_btn, XmNactivateCallback, send_cb, NULL);
