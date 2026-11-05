@@ -24,6 +24,9 @@ struct MemoryBuffer {
 /* json */
 char *json_escape(const char *src);
 char *extract_text_field(const char *json_resp);
+char *extract_turns_for_summary(const char *filepath, int start_turn, int count);
+char *extract_raw_turns_json(const char *filepath, int start_turn, int count);
+
 
 /* Prototypes */
 const char *get_state_file_path(void);
@@ -36,6 +39,12 @@ void init_state_file(void);
 char *read_state_file(void);
 const char *get_state_file_path(void);
 void update_state_file(const char *user_prompt, const char *raw_resp_json);
+int should_auto_summarize(const char *filepath, int turn_count);
+int perform_auto_summarization(const char *filepath, int total_turns);
+int count_conversation_turns(const char *filepath);
+
+/* summary */
+char *request_gemini_summary(const char *text_to_summarize);
 
 /* Request */
 char *send_request(const char *json_payload);

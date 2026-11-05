@@ -50,8 +50,11 @@ static void set_default_config(void)
     strncpy(g_config.models[g_config.model_count++], "gemini-2.5-flash", MAX_NAME_LEN - 1);
     strncpy(g_config.models[g_config.model_count++], "gemini-1.5-pro", MAX_NAME_LEN - 1);
 
-    g_config.keep_last_turns = 5;
-    g_config.auto_summary_threshold = 10;
+    /* Auto-summarize defaults */
+    g_config.auto_summarize  = 1;          /* Enabled by default */
+    g_config.max_turns       = 20;         /* Compact after 20 turns */
+    g_config.max_size_bytes  = 32 * 1024;  /* 32 KB threshold */
+    g_config.preserve_turns  = 4;          /* Always retain the last 4 exchanges */
 }
 
 /* Parse comma-separated list of models */
@@ -129,10 +132,17 @@ int config_load(const char *custom_path)
             strncpy(g_config.api_endpoint_base, val, sizeof(g_config.api_endpoint_base) - 1);
         } else if (strcasecmp(key, "models") == 0) {
             parse_models_list(val);
-        } else if (strcasecmp(key, "keep_last_turns") == 0) {
-            g_config.keep_last_turns = atoi(val);
-        } else if (strcasecmp(key, "auto_summary_threshold") == 0) {
-            g_config.auto_summary_threshold = atoi(val);
+        } else  if (strcmp(key, "auto_summarize") == 0) {
+            g_config.auto_summarize = (strcmp(val, "true") == 0 || atoi(val) == 1) ? 1 : 0;
+        } 
+        else if (strcmp(key, "max_turns") == 0) {
+            g_config.max_turns = atoi(val);
+        } 
+        else if (strcmp(key, "max_size_bytes") == 0) {
+            g_config.max_size_bytes = atol(val);
+        } 
+        else if (strcmp(key, "preserve_turns") == 0) {
+            g_config.preserve_turns = atoi(val);
         }
     }
 

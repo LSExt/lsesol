@@ -9,14 +9,16 @@ typedef struct {
     char state_dir[MAX_PATH_LEN];
     char default_model[MAX_NAME_LEN];
     char api_endpoint_base[MAX_PATH_LEN];
-    
+
     /* Available models list */
     char models[MAX_MODELS][MAX_NAME_LEN];
     int  model_count;
-
-    /* Context management */
-    int keep_last_turns;
-    int auto_summary_threshold;
+    
+    /* --- Auto-Summarization Config --- */
+    int    auto_summarize;      /* 1 = Enabled (default), 0 = Disabled */
+    int    max_turns;           /* e.g., 20 turns before compaction */
+    long   max_size_bytes;      /* e.g., 32768 (32 KB) before compaction */
+    int    preserve_turns;      /* Number of recent turns to leave uncompacted */
 } lseai_config_t;
 
 /* Global configuration instance */

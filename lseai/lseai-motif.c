@@ -1,8 +1,8 @@
 /*
  * gemini_motif.c - Standalone Motif / CDE Frontend for Gemini Client
- * Target: Solaris 2.5.1 / GCC 4.3.6 / Motif 1.2 or 2.x
+ * Target: Solaris / GCC 4.3.6 / Motif 1.2 or 2.x
  *
- * gcc -O2 gemini_motif.c -o gemini_motif  -I/usr/dt/include -I/usr/openwin/include -L/usr/dt/lib -R/usr/dt/lib -L/usr/openwin/lib -R/usr/openwin/lib -lXm -lXt -lX11 -lsocket -lnsl 
+ * build: make
  */
 
 #include "lseai.h"
@@ -38,6 +38,23 @@ static Widget model_pane_w;
 static Widget top_bar_w;
 static Widget toplevel_w;
 
+
+void force_motif_render(Widget w)
+{
+    if (!w) return;
+
+    Display *dpy = XtDisplay(w);
+    XtAppContext app = XtWidgetToApplicationContext(w);
+
+    /* Process all pending expose and redraw events */
+    while (XtAppPending(app) & (XtIMXEvent | XtIMTimer)) {
+        XtAppProcessEvent(app, XtIMXEvent | XtIMTimer);
+    }
+
+    /* Force X server to execute all drawing commands right now */
+    XmUpdateDisplay(w);
+    XSync(dpy, False);
+}
 
 static void append_conversation_text( Widget w, char *msg)
 {
@@ -180,7 +197,7 @@ static void cb_menu_edit_clear_prompt(Widget w, XtPointer client_data, XtPointer
 /* Callback: Manual Conversation Compaction */
 static void compress_cb(Widget w, XtPointer client_data, XtPointer call_data)
 {
-    int keep_n = (g_config.keep_last_turns > 0) ? g_config.keep_last_turns : 5;
+    int keep_n = (g_config.preserve_turns> 0) ? g_config.preserve_turns: 5;
     char msg[256];
 
     append_conversation_text(output_text_w, "\n>>> [ Compacting conversation history... ] <<<\n");
@@ -314,11 +331,24 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
             }
             return;
         }
-
+        force_motif_render(output_text_w);
         sprintf(full_payload, "%s%s{\"role\":\"user\",\"parts\":[{\"text\":\"%s\"}]}]}",
                 current_state, (has_entries ? "," : ""), escaped_prompt ? escaped_prompt : "");
 
+        /* Trigger auto-summarization if thresholds are exceeded */
+        int current_turns = count_conversation_turns(g_current_conversation);
+        if (should_auto_summarize(g_current_conversation, current_turns)) {
+            /* Update Motif status label or cursor if available */
+            append_conversation_text(output_text_w, "\n>>> System >>> Compacting long conversation history...");
+            append_conversation_text(output_text_w, ">>> System >>> Compacting long conversation history...");
+            
+            /* Force X11 to flush so the UI reflects the status update immediately */
+            XmUpdateDisplay(toplevel_w);
 
+            append_conversation_text(output_text_w, "Ready.\n");
+        }
+        /* Force render before the network request blocks the loop */
+        force_motif_render(output_text_w);
 
         printf("Thinking...\n");
         char *response_json = send_request(full_payload);
@@ -1100,7 +1130,7 @@ int main(int argc, char *argv[])
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
     XtSetArg(args[n], XmNrightWidget, send_btn); n++;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
-    XtSetArg(args[n], XmNrows, 4); n++;
+    XtSetArg(args[n], XmNrows, 6); n++;
     XtSetArg(args[n], XmNeditMode, XmMULTI_LINE_EDIT); n++;
     XtSetArg(args[n], XmNwordWrap, True); n++;
     XtSetArg(args[n], XmNscrollHorizontal, False); n++;
