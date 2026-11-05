@@ -20,7 +20,8 @@
 #include <Xm/Separator.h>
 #include <Xm/FileSB.h>      /* XmCreateFileSelectionDialog */
 #include <Xm/MessageB.h>    /* XmCreateQuestionDialog, XmCreateWarningDialog, etc. */
-#include <Xm/SelectioB.h>   /* Include this if you also use XmCreatePromptDialog */
+#include <Xm/SelectioB.h>   /* XmCreatePromptDialog */
+#include <X11/cursorfont.h> /* XC_crosshair */
 #include "config.h"
 #include "globals.h"
 #if defined(SOLARIS2) || defined(__solaris__) || defined(__SVR4)
@@ -45,6 +46,8 @@ static char g_last_search_term[256] = "";
 /* Conversation deepth indicator */
 static Widget g_depth_label_w = NULL;
 static Widget g_status_msg_w = NULL;
+
+unsigned char *ximage_to_rgb24(Display *dpy, XImage *img, Colormap cmap) ;
 
 
 
@@ -368,7 +371,102 @@ static void cb_menu_edit_clear_prompt(Widget w, XtPointer client_data, XtPointer
     XmTextSetString(input_text_w, "");
 }
 
+/* Creates a secure temp file path ending in .jpg
+ * out_path must have size at least PATH_MAX (or 256 bytes)
+ * Returns 0 on success, -1 on failure.
+ */
+static int get_temp_jpeg_path(char *out_path, size_t out_path_size) {
+    char template[] = "/tmp/lseai_snap_XXXXXX";
+    int fd;
+
+    /* mkstemp overwrites the XXXXXX and opens the file with mode 0600 atomically */
+    fd = mkstemp(template);
+    if (fd == -1) {
+        perror("mkstemp");
+        return -1;
+    }
+
+    /* close file descriptor so libjpeg can open it. */
+    close(fd);
+
+    /* rename to jpg to make files easier to find in the shell */
+    snprintf(out_path, out_path_size, "%s.jpg", template);
+    if (rename(template, out_path) != 0) {
+        /* Fall back to the original name if rename fails */
+        strncpy(out_path, template, out_path_size - 1);
+        out_path[out_path_size - 1] = '\0';
+    }
+
+    return 0;
+}
+static void cb_menu_edit_capture_image(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    set_status_message("Scapturing window screenshot..."); 
+    char jpeg_file[PATH_MAX];
+    get_temp_jpeg_path( jpeg_file, PATH_MAX);
+    capture_window_to_jpeg( w, jpeg_file );
+
+}
+
 /************ EDIT callbacks *******/
+
+/* Interactive window snap: changes cursor, waits for user to click a window */
+int capture_window_to_jpeg(Widget toplevel, const char *out_jpeg_path) {
+    Display *dpy = XtDisplay(toplevel);
+    Window root = DefaultRootWindow(dpy);
+    Cursor cursor = XCreateFontCursor(dpy, XC_crosshair);
+
+    /* Grab pointer across all client windows */
+    if (XGrabPointer(dpy, root, False,
+                     ButtonPressMask,
+                     GrabModeSync, GrabModeAsync,
+                     root, cursor, CurrentTime) != GrabSuccess) {
+        XFreeCursor(dpy, cursor);
+        return -1;
+    }
+
+    XAllowEvents(dpy, SyncPointer, CurrentTime);
+
+    /* Flush and wait for the click event */
+    XEvent ev;
+    Window target_win = None;
+    while (1) {
+        XNextEvent(dpy, &ev);
+        if (ev.type == ButtonPress) {
+            target_win = ev.xbutton.subwindow ? ev.xbutton.subwindow : ev.xbutton.window;
+            break;
+        }
+    }
+
+    XUngrabPointer(dpy, CurrentTime);
+    XFreeCursor(dpy, cursor);
+    XFlush(dpy);
+
+    if (target_win == None) target_win = root;
+
+    /* Get geometry of target */
+    XWindowAttributes attr;
+    if (!XGetWindowAttributes(dpy, target_win, &attr)) {
+        return -1;
+    }
+
+    /* Grab the pixel data */
+    XImage *img = XGetImage(dpy, target_win, 0, 0, 
+                            attr.width, attr.height, 
+                            AllPlanes, ZPixmap);
+    if (!img) return -1;
+
+    unsigned char *rgb = ximage_to_rgb24(dpy, img, attr.colormap);
+    XDestroyImage(img);
+
+    if (!rgb) return -1;
+
+    int ret = write_rgb_to_jpeg_file(out_jpeg_path, rgb, attr.width, attr.height, 85);
+    free(rgb);
+    return ret;
+}
+
+
 
 
 /* Callback: Manual Conversation Compaction */
@@ -1163,6 +1261,8 @@ Widget create_main_menubar(Widget parent)
     add_menu_separator(menu_edit);
     add_menu_item(menu_edit, "Clear Screen", NULL, NULL, cb_menu_edit_clear_screen, NULL);
     add_menu_item(menu_edit, "Clear Prompt Box", NULL, NULL, cb_menu_edit_clear_prompt, NULL);
+    add_menu_separator(menu_edit);
+    add_menu_item(menu_edit, "Snap Windows...", "Ctrl<Key>S", "Ctrl+S", cb_menu_edit_capture_image, NULL);
 
     s_edit = XmStringCreateLocalized("Edit");
     cascade_edit = XtVaCreateManagedWidget("cascadeEdit",

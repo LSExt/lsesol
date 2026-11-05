@@ -27,7 +27,7 @@ MOTIF_LDFLAGS= -L/usr/dt/lib -R/usr/dt/lib \
 # -------------------------------------------------------------
 BASE_LIBS    = -lgen -lsocket -lnsl -lcurl -lssl -lcrypto -llsecompat 
 CLI_LIBS     = -lreadline -lcurses $(BASE_LIBS)
-MOTIF_LIBS   = -lXm -lXt -lX11 $(BASE_LIBS)
+MOTIF_LIBS   = -ljpeg -lXm -lXt -lX11 $(BASE_LIBS)
 
 # -------------------------------------------------------------
 # Libraries: Static (Portable Redistribution)
@@ -69,7 +69,8 @@ COMMON_OBJS  = summarize.o \
 CLI_OBJS     = lseai.o \
                read_prompt.o
 
-MOTIF_OBJS   = lseai-motif.o 
+MOTIF_OBJS   = lseai-motif.o \
+               image.o 
 
 .PHONY: all clean cli motif static cli-static motif-static
 

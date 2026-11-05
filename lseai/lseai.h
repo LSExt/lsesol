@@ -47,6 +47,9 @@ int perform_auto_summarization(const char *filepath, int total_turns);
 int count_conversation_turns(const char *filepath);
 int save_compacted_state_file(const char *filepath, const char *summary_text, int preserve_last_n);
 
+/* image processing */
+int write_rgb_to_jpeg_file(const char *filename, unsigned char *rgb, int width, int height, int quality);
+
 /* summary */
 char *request_gemini_summary(const char *text_to_summarize);
 
