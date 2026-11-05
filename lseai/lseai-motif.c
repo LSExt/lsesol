@@ -46,6 +46,7 @@ static char g_last_search_term[256] = "";
 /* Conversation deepth indicator */
 static Widget g_depth_label_w = NULL;
 static Widget g_status_msg_w = NULL;
+static int is_input_expanded = 0;
 
 unsigned char *ximage_to_rgb24(Display *dpy, XImage *img, Colormap cmap) ;
 
@@ -118,6 +119,44 @@ void set_depth_display(int turn_count, long file_size)
         XmUpdateDisplay(g_depth_label_w);
     }
 }
+
+
+/* Expands and shrinks, the input area, changing between document mode and short imput mode
+* Is usefull if entering a large prompt and want to review before pressing send
+*/
+static void toggle_input_expand_cb(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget toggle_btn   = w;
+    Widget input_scroll = XtParent(input_text_w);
+    Widget form_w       = XtParent(input_scroll);
+    Dimension form_h    = 0;
+    XmString label;
+
+    XtVaGetValues(form_w, XmNheight, &form_h, NULL);
+    if (form_h < 200) form_h = 600; /* Fallback guard */
+
+    if (!is_input_expanded) {
+        /* EXPAND: Input takes ~80% of current window height */
+        Dimension new_input_h = (Dimension)(form_h * 0.80);
+        XtVaSetValues(input_scroll, XmNheight, new_input_h, NULL);
+
+        label = XmStringCreateLocalized("Shrink");
+        XtVaSetValues(toggle_btn, XmNlabelString, label, NULL);
+        XmStringFree(label);
+
+        is_input_expanded = 1;
+    } else {
+        /* SHRINK: Snap back to fixed 6-line prompt height */
+        XtVaSetValues(input_text_w, XmNrows, (short)6, NULL);
+
+        label = XmStringCreateLocalized("Expand");
+        XtVaSetValues(toggle_btn, XmNlabelString, label, NULL);
+        XmStringFree(label);
+
+        is_input_expanded = 0;
+    }
+}
+
 
 /* Forward declaration so new_chat_ok_cb can reference it */
 static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data);
@@ -401,7 +440,7 @@ static int get_temp_jpeg_path(char *out_path, size_t out_path_size) {
 }
 static void cb_menu_edit_capture_image(Widget w, XtPointer client_data, XtPointer call_data)
 {
-    set_status_message("Scapturing window screenshot..."); 
+    set_status_message("Capturing window screenshot..."); 
     char jpeg_file[PATH_MAX];
     get_temp_jpeg_path( jpeg_file, PATH_MAX);
     capture_window_to_jpeg( w, jpeg_file );
@@ -1548,10 +1587,24 @@ int main(int argc, char *argv[])
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNmarginWidth, 12); n++;
-    XtSetArg(args[n], XmNmarginHeight, 36); n++;
+    XtSetArg(args[n], XmNmarginHeight, 12); n++;
     send_btn = XmCreatePushButton(form, "Send", args, n);
     XtManageChild(send_btn);
     XtAddCallback(send_btn, XmNactivateCallback, send_cb, NULL);
+    /* Expand / Shrink input box */
+    Widget expand_btn;
+    n = 0;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNbottomWidget, send_btn); n++;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_OPPOSITE_WIDGET); n++;
+    XtSetArg(args[n], XmNleftWidget, send_btn); n++;
+    XtSetArg(args[n], XmNmarginWidth, 12); n++;
+    XtSetArg(args[n], XmNmarginHeight, 12); n++;
+    expand_btn = XmCreatePushButton(form, "Expand", args, n);
+    XtManageChild(expand_btn);
+    XtAddCallback(expand_btn, XmNactivateCallback, toggle_input_expand_cb, NULL);
+
 
     /* Prompt Input Area (Scrolled multi-line text at bottom) */
     n = 0;
