@@ -38,20 +38,8 @@ char *clean_to_ascii_string(const char *str)
                 case 'r': out[out_idx++] = '\r'; i++; continue;
                 case 't': out[out_idx++] = '\t'; i++; continue;
                 case '"': out[out_idx++] = '"';  i++; continue;
-                case '\\':
-                    /* If it's double-escaped (e.g. \\n, \\", \\t), resolve the escaped char */
-                    if (i + 2 < len) {
-                        char next2 = str[i + 2];
-                        if (next2 == 'n') { out[out_idx++] = '\n'; i += 2; continue; }
-                        if (next2 == 'r') { out[out_idx++] = '\r'; i += 2; continue; }
-                        if (next2 == 't') { out[out_idx++] = '\t'; i += 2; continue; }
-                        if (next2 == '"') { out[out_idx++] = '"';  i += 2; continue; }
-                        if (next2 == '\\') { out[out_idx++] = '\\'; i += 2; continue; }
-                    }
-                    /* Otherwise just keep a single backslash */
-                    out[out_idx++] = '\\';
-                    i++;
-                    continue;
+                case '\\': out[out_idx++] = '\\'; i++; continue;
+                case '/':  out[out_idx++] = '/';  i++; continue;
                 case 'u':
                     /* Convert Hex Unicode escapes like \u003e to plain ASCII */
                     if (i + 5 < len) {
