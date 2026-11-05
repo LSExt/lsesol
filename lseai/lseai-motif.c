@@ -216,13 +216,20 @@ static void compress_cb(Widget w, XtPointer client_data, XtPointer call_data)
     XmTextShowPosition(output_text_w, XmTextGetLastPosition(output_text_w));
 }
 
-/* Helper to rebuild the Model OptionMenu pane dynamically */
 void refresh_model_dropdown(void)
 {
-    WidgetList children;
+    WidgetList children = NULL;
     Cardinal num_children = 0;
     int i;
     Widget initial_btn = NULL;
+
+    /* Safety 1: Ensure container widgets exist */
+    if (!model_pane_w || !model_menu_w) {
+        return;
+    }
+
+    /* Safety 2: Detach active selection before destroying child widgets */
+    XtVaSetValues(model_menu_w, XmNmenuHistory, NULL, NULL);
 
     /* 1. Remove all old model buttons from the pulldown pane */
     XtVaGetValues(model_pane_w,
@@ -230,28 +237,49 @@ void refresh_model_dropdown(void)
                   XmNnumChildren, &num_children,
                   NULL);
 
-    for (i = (int)num_children - 1; i >= 0; i--) {
-        XtDestroyWidget(children[i]);
+    if (children && num_children > 0) {
+        for (i = (int)num_children - 1; i >= 0; i--) {
+            XtDestroyWidget(children[i]);
+        }
     }
 
     /* 2. Recreate buttons from updated g_config.models */
     for (i = 0; i < g_config.model_count; i++) {
         char *saved_model = strdup(g_config.models[i]);
-        Widget btn = XmCreatePushButton(model_pane_w, saved_model, NULL, 0);
-        XtManageChild(btn);
-        XtAddCallback(btn, XmNactivateCallback, model_select_cb, (XtPointer)saved_model);
+        char pad_buf[64];
+        XmString xms;
+        Arg bargs[5];
+        int bn = 0;
 
-        if (strcmp(saved_model, g_current_model) == 0 || i == 0) {
+        /* Pad display string to at least 25 characters */
+        snprintf(pad_buf, sizeof(pad_buf), "%-25s", saved_model);
+        xms = XmStringCreateLocalized(pad_buf);
+
+        XtSetArg(bargs[bn], XmNlabelString, xms); bn++;
+        XtSetArg(bargs[bn], XmNmarginHeight, 8 ); bn++;
+        Widget btn = XmCreatePushButton(model_pane_w, saved_model, bargs, bn);
+        XmStringFree(xms);
+
+        XtAddCallback(btn, XmNactivateCallback, model_select_cb, (XtPointer)saved_model);
+        XtManageChild(btn);
+
+        /* Safety 3: Safe compare (handles g_current_model == NULL gracefully) */
+        if (i == 0 || (g_current_model && strcmp(saved_model, g_current_model) == 0)) {
             initial_btn = btn;
         }
     }
 
-    /* 3. Re-set visible selection */
+    /* 3. Re-set visible selection and force button recalculation */
     if (initial_btn) {
         XtVaSetValues(model_menu_w, XmNmenuHistory, initial_btn, NULL);
+
+        /* Force the visible cascade button to adapt to the new width */
+        Widget cascade_btn = XmOptionButtonGadget(model_menu_w);
+        if (cascade_btn) {
+            XtVaSetValues(cascade_btn, XmNrecomputeSize, True, NULL);
+        }
     }
 }
-
 /* Callback: User clicks Refresh Models */
 static void refresh_models_cb(Widget w, XtPointer client_data, XtPointer call_data)
 {
@@ -542,6 +570,7 @@ void refresh_thread_dropdown(void)
         xms = XmStringCreateLocalized(pad_buf);
 
         XtSetArg(bargs[bn], XmNlabelString, xms); bn++;
+        XtSetArg(bargs[bn], XmNmarginHeight, 8 ); bn++;
         initial_btn = XmCreatePushButton(conv_pane_w, initial_chat_name, bargs, bn);
         XmStringFree(xms);
 
@@ -565,6 +594,7 @@ void refresh_thread_dropdown(void)
             xms = XmStringCreateLocalized(pad_buf);
 
             XtSetArg(bargs[bn], XmNlabelString, xms); bn++;
+            XtSetArg(bargs[bn], XmNmarginHeight, 8 ); bn++;
             Widget btn = XmCreatePushButton(conv_pane_w, saved_name, bargs, bn);
             XmStringFree(xms);
 
@@ -1086,7 +1116,8 @@ int main(int argc, char *argv[])
 
     /* New Chat Button */
     n = 0;
-    new_btn = XmCreatePushButton(top_bar, "New Chat", args, n);
+
+    new_btn = XmCreatePushButton(top_bar, "  New Chat  ", args, n);
     XtManageChild(new_btn);
     XtAddCallback(new_btn, XmNactivateCallback, new_conv_cb, NULL);
 
@@ -1095,36 +1126,14 @@ int main(int argc, char *argv[])
     model_pane = XmCreatePulldownMenu(top_bar, "modelPane", NULL, 0);
     model_pane_w = model_pane;
 
-    if (g_config.model_count > 0) {
-        int i;
-        for (i = 0; i < g_config.model_count; i++) {
-            /* Create persistent string for client_data callback */
-            char *saved_model = strdup(g_config.models[i]);
-            Widget btn = XmCreatePushButton(model_pane, saved_model, NULL, 0);
-            XtManageChild(btn);
-            XtAddCallback(btn, XmNactivateCallback, model_select_cb, (XtPointer)saved_model);
-
-            /* Check if this button matches the active model to select it */
-            if (strcmp(saved_model, g_current_model) == 0) {
-                initial_model_btn = btn;
-            } else if (i == 0 && initial_model_btn == NULL) {
-                /* Fallback to first button if match not found yet */
-                initial_model_btn = btn;
-            }
-        }
-    } else {
-        /* Fallback if config has no models defined */
-        char *fallback_model = strdup("gemini-2.5-flash");
-        initial_model_btn = XmCreatePushButton(model_pane, fallback_model, NULL, 0);
-        XtManageChild(initial_model_btn);
-        XtAddCallback(initial_model_btn, XmNactivateCallback, model_select_cb, (XtPointer)fallback_model);
-    }
 
     n = 0;
     XtSetArg(args[n], XmNlabelString, XmStringCreateLocalized("Model:")); n++;
     XtSetArg(args[n], XmNsubMenuId, model_pane); n++;
     model_menu_w = XmCreateOptionMenu(top_bar, "modelOptionMenu", args, n);
     XtManageChild(model_menu_w);
+
+    refresh_model_dropdown();
 
     /* -------------------------------------------------------------
      * 2. BOTTOM PROMPT & SEND BUTTON
