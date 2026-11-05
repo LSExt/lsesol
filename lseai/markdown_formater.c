@@ -8,6 +8,107 @@
 
 #define MAX_TABLE_COLS 16
 
+/* =========================================================================
+ * LaTeX & Unicode Arrow -> Clean ASCII Replacements for Motif/XmText
+ * ========================================================================= */
+
+typedef struct {
+    const char *token;
+    size_t      token_len;
+    const char *ascii_repr;
+    size_t      repr_len;
+} ArrowRule;
+
+/* Ordered from longest / most specific to shortest */
+static const ArrowRule ARROW_RULES[] = {
+    /* LaTeX Math with delimiters */
+    { "$\\leftrightarrow$", 18, "<->", 3 },
+    { "$\\Leftrightarrow$", 18, "<=>", 3 },
+    { "$\\rightarrow$",     14, "->",  2 },
+    { "$\\leftarrow$",      13, "<-",  2 },
+    { "$\\Rightarrow$",     14, "=>",  2 },
+    { "$\\Leftarrow$",      13, "<=",  2 },
+    { "$\\to$",              6, "->",  2 },
+
+    /* Bare LaTeX Macros */
+    { "\\leftrightarrow",   15, "<->", 3 },
+    { "\\Leftrightarrow",   15, "<=>", 3 },
+    { "\\rightarrow",       11, "->",  2 },
+    { "\\leftarrow",        10, "<-",  2 },
+    { "\\Rightarrow",       11, "=>",  2 },
+    { "\\Leftarrow",        10, "<=",  2 },
+    { "\\to",                3, "->",  2 },
+
+    /* UTF-8 Byte Sequences (for when Gemini sends raw Unicode) */
+    { "\xE2\x86\x94",        3, "<->", 3 }, /*  */
+    { "\xE2\x87\x94",        3, "<=>", 3 }, /*  */
+    { "\xE2\x86\x92",        3, "->",  2 }, /*  */
+    { "\xE2\x86\x90",        3, "<-",  2 }, /*  */
+    { "\xE2\x87\x92",        3, "=>",  2 }, /*  */
+    { "\xE2\x87\x90",        3, "<=",  2 }, /*  */
+
+    { NULL, 0, NULL, 0 }
+};
+
+/**
+ * Check if the current position matches an arrow pattern.
+ * If matched, outputs the ASCII arrow, advances input pointer `src`, and returns 1.
+ * Otherwise returns 0.
+ */
+static int match_and_replace_arrow(const char **src, char **dst, size_t *dst_rem) {
+    const ArrowRule *rule;
+
+    for (rule = ARROW_RULES; rule->token != NULL; rule++) {
+        if (strncmp(*src, rule->token, rule->token_len) == 0) {
+            /* Ensure destination buffer has space */
+            if (*dst_rem > rule->repr_len) {
+                memcpy(*dst, rule->ascii_repr, rule->repr_len);
+                *dst += rule->repr_len;
+                *dst_rem -= rule->repr_len;
+            }
+            /* Advance input buffer past the token */
+            *src += rule->token_len;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Formats a regular text line into out buffer:
+ * - Replaces LaTeX/UTF-8 arrows with ASCII equivalents
+ * - Strips or preserves inline markers safely
+ */
+static size_t format_prose_line(const char *src, size_t src_len, char *dst, size_t dst_max) {
+    size_t s = 0;
+    size_t d = 0;
+
+    while (s < src_len && d < (dst_max - 1)) {
+        /* Check for Arrow tokens */
+        if (src[s] == '$' || src[s] == '\\' || (unsigned char)src[s] == 0xE2) {
+            int matched = 0;
+            const ArrowRule *rule;
+            for (rule = ARROW_RULES; rule->token != NULL; rule++) {
+                if ((src_len - s) >= rule->token_len &&
+                    memcmp(&src[s], rule->token, rule->token_len) == 0) {
+                    if (d + rule->repr_len < dst_max) {
+                        memcpy(&dst[d], rule->ascii_repr, rule->repr_len);
+                        d += rule->repr_len;
+                    }
+                    s += rule->token_len;
+                    matched = 1;
+                    break;
+                }
+            }
+            if (matched) continue;
+        }
+
+        /* Normal character copy */
+        dst[d++] = src[s++];
+    }
+    return d;
+}
+
 /* Trims leading and trailing spaces from a cell */
 static void trim_cell(const char *src, size_t len, char *dest, size_t dest_cap)
 {
@@ -126,29 +227,36 @@ char *format_markdown_to_ascii(const char *src)
             continue;
         }
 
-        /* -------------------------------------------------------------
+       /* -------------------------------------------------------------
          * 2. Light Table Formatter (| col1 | col2 |)
          * ------------------------------------------------------------- */
-        if (line_len >= 3 && line_start[0] == '|' && line_start[line_len - 1] == '|') {
+        /* Trim trailing spaces from line_len to ensure trailing '|' matches */
+        size_t trimmed_len = line_len;
+        while (trimmed_len > 0 && isspace((unsigned char)line_start[trimmed_len - 1])) {
+            trimmed_len--;
+        }
+
+        if (trimmed_len >= 3 && line_start[0] == '|' && line_start[trimmed_len - 1] == '|') {
             const char *tbl_ptr = line_start;
             int col_widths[MAX_TABLE_COLS] = {0};
             int num_cols = 0;
 
+            /* PASS 1: Compute column widths */
             while (*tbl_ptr != '\0') {
                 const char *row_end = strchr(tbl_ptr, '\n');
-                size_t row_len = row_end ? (size_t)(row_end - tbl_ptr) : strlen(tbl_ptr);
-                while (row_len > 0 && tbl_ptr[row_len - 1] == '\r') row_len--;
+                size_t r_len = row_end ? (size_t)(row_end - tbl_ptr) : strlen(tbl_ptr);
+                while (r_len > 0 && isspace((unsigned char)tbl_ptr[r_len - 1])) r_len--;
 
-                if (row_len < 3 || tbl_ptr[0] != '|' || tbl_ptr[row_len - 1] != '|') {
-                    break;
+                if (r_len < 3 || tbl_ptr[0] != '|' || tbl_ptr[r_len - 1] != '|') {
+                    break; /* Not a table row */
                 }
 
-                if (!is_separator_row(tbl_ptr, row_len)) {
+                if (!is_separator_row(tbl_ptr, r_len)) {
                     int c_idx = 0;
                     const char *cell_start = tbl_ptr + 1;
                     const char *pipe;
 
-                    while ((pipe = memchr(cell_start, '|', (tbl_ptr + row_len) - cell_start)) != NULL && c_idx < MAX_TABLE_COLS) {
+                    while ((pipe = memchr(cell_start, '|', (tbl_ptr + r_len) - cell_start)) != NULL && c_idx < MAX_TABLE_COLS) {
                         char buf[128];
                         trim_cell(cell_start, pipe - cell_start, buf, sizeof(buf));
                         int w = (int)strlen(buf);
@@ -161,34 +269,38 @@ char *format_markdown_to_ascii(const char *src)
                     if (c_idx > num_cols) num_cols = c_idx;
                 }
 
-                tbl_ptr = row_end ? (row_end + 1) : (tbl_ptr + row_len);
+                tbl_ptr = row_end ? (row_end + 1) : (tbl_ptr + r_len);
             }
 
+            /* PASS 2: Render table with aligned borders */
             if (num_cols > 0) {
                 out[out_idx++] = '\n';
+                tbl_ptr = line_start;
 
-                while (*p != '\0') {
-                    const char *row_start = line_start;
-                    size_t r_len = line_len;
+                while (*tbl_ptr != '\0') {
+                    const char *row_end = strchr(tbl_ptr, '\n');
+                    size_t r_len = row_end ? (size_t)(row_end - tbl_ptr) : strlen(tbl_ptr);
+                    const char *next_row = row_end ? (row_end + 1) : (tbl_ptr + r_len);
+                    while (r_len > 0 && isspace((unsigned char)tbl_ptr[r_len - 1])) r_len--;
 
-                    int sep = is_separator_row(row_start, r_len);
+                    if (r_len < 3 || tbl_ptr[0] != '|' || tbl_ptr[r_len - 1] != '|') {
+                        break;
+                    }
 
-                    if (sep) {
-                        int c;
+                    if (is_separator_row(tbl_ptr, r_len)) {
                         out[out_idx++] = '+';
-                        for (c = 0; c < num_cols; c++) {
-                            int w;
-                            for (w = 0; w < col_widths[c] + 2; w++) out[out_idx++] = '-';
+                        for (int c = 0; c < num_cols; c++) {
+                            for (int w = 0; w < col_widths[c] + 2; w++) out[out_idx++] = '-';
                             out[out_idx++] = '+';
                         }
                         out[out_idx++] = '\n';
                     } else {
                         int c_idx = 0;
-                        const char *cell_start = row_start + 1;
+                        const char *cell_start = tbl_ptr + 1;
                         const char *pipe;
 
                         out[out_idx++] = '|';
-                        while ((pipe = memchr(cell_start, '|', (row_start + r_len) - cell_start)) != NULL && c_idx < num_cols) {
+                        while ((pipe = memchr(cell_start, '|', (tbl_ptr + r_len) - cell_start)) != NULL && c_idx < num_cols) {
                             char buf[128];
                             trim_cell(cell_start, pipe - cell_start, buf, sizeof(buf));
                             
@@ -204,23 +316,15 @@ char *format_markdown_to_ascii(const char *src)
                         out[out_idx++] = '\n';
                     }
 
-                    if (*p == '\0') break;
-                    line_start = p;
-                    line_end = strchr(p, '\n');
-                    line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
-                    p = line_end ? (line_end + 1) : (line_start + line_len);
-                    while (line_len > 0 && line_start[line_len - 1] == '\r') line_len--;
-
-                    if (line_len < 3 || line_start[0] != '|' || line_start[line_len - 1] != '|') {
-                        p = line_start;
-                        break;
-                    }
+                    tbl_ptr = next_row;
                 }
+
+                /* Synchronize outer loop pointer 'p' to end of table */
+                p = tbl_ptr;
                 out[out_idx++] = '\n';
                 continue;
             }
         }
-
         /* -------------------------------------------------------------
          * 3. Headers: # H1, ## H2, ### H3
          * ------------------------------------------------------------- */
@@ -267,12 +371,10 @@ char *format_markdown_to_ascii(const char *src)
             out[out_idx++] = '\n';
             continue;
         }
-
         /* -------------------------------------------------------------
-         * 5. Regular Text Paragraph Line
+         * 5. Regular Prose Line (Arrows & Inline Formatting)
          * ------------------------------------------------------------- */
-        memcpy(&out[out_idx], line_start, line_len);
-        out_idx += line_len;
+        out_idx += format_prose_line(line_start, line_len, &out[out_idx], out_cap - out_idx);
         out[out_idx++] = '\n';
     }
 
