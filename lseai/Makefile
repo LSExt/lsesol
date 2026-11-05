@@ -8,7 +8,7 @@ CC           = gcc
 # Compiler Flags
 # -------------------------------------------------------------
 # Flags for standard C files (strict warnings + C99)
-CFLAGS       = -g -std=gnu99 -Wall -include $(PREFIX)/include/lsecompat.h -I$(PREFIX)/include
+CFLAGS       = -g -std=gnu99 -Wall -D__EXTENSIONS__ -include $(PREFIX)/include/lsecompat.h -I$(PREFIX)/include
 
 # Flags for Motif/X11 C files (silences SunOS X11 header noise)
 MOTIF_CFLAGS = -g -O2 -include $(PREFIX)/include/lsecompat.h \
@@ -26,7 +26,7 @@ MOTIF_LDFLAGS= -L/usr/dt/lib -R/usr/dt/lib \
 # Libraries
 # -------------------------------------------------------------
 # Shared backend networking / crypto / compat
-BASE_LIBS    = -lsocket -lnsl -lcurl -lssl -lcrypto -llsecompat
+BASE_LIBS    = -lgen -lsocket -lnsl -lcurl -lssl -lcrypto -llsecompat 
 
 # CLI extra libraries (readline, terminal control)
 CLI_LIBS     = -lreadline -lcurses $(BASE_LIBS)

@@ -18,6 +18,9 @@
 #include <Xm/Label.h>
 #include <Xm/SelectioB.h>
 #include <Xm/Separator.h>
+#include <Xm/FileSB.h>      /* XmCreateFileSelectionDialog */
+#include <Xm/MessageB.h>    /* XmCreateQuestionDialog, XmCreateWarningDialog, etc. */
+#include <Xm/SelectioB.h>   /* Include this if you also use XmCreatePromptDialog */
 #include "config.h"
 #include "globals.h"
 
@@ -29,6 +32,7 @@ static Widget conv_menu_w;
 static Widget conv_pane_w;
 static Widget model_menu_w;
 static Widget model_pane_w;
+static Widget top_bar_w;
 static Widget toplevel_w;
 
 
@@ -408,10 +412,419 @@ static void model_select_cb(Widget w, XtPointer client_data, XtPointer call_data
     }
 }
 
+
+
+void select_first_conversation(void)
+{
+    config_load(NULL);
+    strncpy(g_current_model, g_config.default_model, sizeof(g_current_model) - 1);
+    g_current_model[sizeof(g_current_model) - 1] = '\0';
+
+    int conv_count = 0;
+    char **conversation_list = config_list_conversations(&conv_count);
+
+    if (conversation_list && conv_count > 0) {
+        /* Construct full path: ~/.lseai/conversations/<chat_name>.gemini.json */
+        snprintf(g_current_conversation, sizeof(g_current_conversation),
+                 "%s/%s.gemini.json", g_config.state_dir, conversation_list[0]);
+    } else {
+        /* Default fallback path */
+        snprintf(g_current_conversation, sizeof(g_current_conversation),
+                 "%s/default.gemini.json", g_config.state_dir);
+    }
+    g_current_conversation[sizeof(g_current_conversation) - 1] = '\0';
+
+    /* Make sure the state file exists with empty JSON {"contents":[]} */
+    init_state_file();
+    /* Now it is safe to free the temporary directory list */
+    if (conversation_list) {
+        config_free_conversation_list(conversation_list, conv_count);
+    }
+}
+
+/* Callback to free the heap-allocated chat name when the button is destroyed */
+static void conv_btn_destroy_cb(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    (void)w;
+    (void)call_data;
+    if (client_data != NULL) {
+        free((char *)client_data);
+    }
+}
+
+void refresh_thread_dropdown(void)
+{
+    Arg args[10];
+    int n;
+    int chat_count = 0;
+    char **chats = NULL;
+    Widget initial_btn = NULL;
+    char *initial_chat_name = NULL;
+
+    /* ------------------------------------------------------------------ */
+    /* 1. Tear down existing entries in the Pulldown Menu Pane            */
+    /* ------------------------------------------------------------------ */
+    if (conv_pane_w != NULL) {
+        WidgetList children = NULL;
+        Cardinal num_children = 0;
+
+        n = 0;
+        XtSetArg(args[n], XmNchildren, &children); n++;
+        XtSetArg(args[n], XmNnumChildren, &num_children); n++;
+        XtGetValues(conv_pane_w, args, n);
+
+        if (num_children > 0 && children != NULL) {
+            /* Unmanage all children in a single X server batch */
+            XtUnmanageChildren(children, num_children);
+
+            /*
+             * Destroy in reverse to avoid index churn. 
+             * XtDestroyWidget automatically triggers conv_btn_destroy_cb,
+             * which frees each strdup'd string safely.
+             */
+            while (num_children > 0) {
+                num_children--;
+                XtDestroyWidget(children[num_children]);
+            }
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 2. Retrieve conversation list from configuration subsystem         */
+    /* ------------------------------------------------------------------ */
+    chats = config_list_conversations(&chat_count);
+
+    if (chat_count == 0) {
+        /* No saved files found: initialize "default" */
+        initial_chat_name = strdup("default");
+        initial_btn = XmCreatePushButton(conv_pane_w, initial_chat_name, NULL, 0);
+
+        /* Bind free() to widget destruction lifecycle */
+        XtAddCallback(initial_btn, XmNdestroyCallback, 
+                      conv_btn_destroy_cb, (XtPointer)initial_chat_name);
+        XtAddCallback(initial_btn, XmNactivateCallback, 
+                      conv_select_cb, (XtPointer)initial_chat_name);
+        XtManageChild(initial_btn);
+    } else {
+        int i;
+        for (i = 0; i < chat_count; i++) {
+            char *saved_name = strdup(chats[i]);
+            Widget btn = XmCreatePushButton(conv_pane_w, saved_name, NULL, 0);
+
+            /* Bind free() to widget destruction lifecycle */
+            XtAddCallback(btn, XmNdestroyCallback, 
+                          conv_btn_destroy_cb, (XtPointer)saved_name);
+            XtAddCallback(btn, XmNactivateCallback, 
+                          conv_select_cb, (XtPointer)saved_name);
+            XtManageChild(btn);
+
+            if (i == 0) {
+                initial_btn = btn;
+                initial_chat_name = saved_name;
+            }
+        }
+        
+        /* 
+         * If config_list_conversations dynamically allocates its string table,
+         * free the container array or items here according to its contract.
+         */
+    }
+    config_free_conversation_list( chats, chat_count);
+
+    /* ------------------------------------------------------------------ */
+    /* 3. Synchronize OptionMenu UI label and Active State File           */
+    /* ------------------------------------------------------------------ */
+    if (initial_btn != NULL && conv_menu_w!= NULL) {
+        /*
+         * Force the parent XmOptionMenu to visually display initial_btn
+         * as the currently active selection.
+         */
+        n = 0;
+        XtSetArg(args[n], XmNmenuHistory, initial_btn); n++;
+        XtSetValues(conv_menu_w, args, n);
+    }
+
+    if (initial_chat_name != NULL) {
+        snprintf(g_current_conversation, sizeof(g_current_conversation),
+                 "%s/%s.gemini.json", g_config.state_dir, initial_chat_name);
+        init_state_file();
+        printf("Initial conversation set to: %s\n", g_current_conversation);
+    }
+}
+
+/************************
+** FILE callbacks
+*************************/
+
+/* File selection callback for raw/formatted export */
+static void execute_export(Widget dialog, XtPointer client_data, XtPointer call_data)
+{
+    XmFileSelectionBoxCallbackStruct *cbs = (XmFileSelectionBoxCallbackStruct *)call_data;
+    char *filepath = NULL;
+    int is_json = (int)(long)client_data;
+
+    if (!XmStringGetLtoR(cbs->value, XmSTRING_DEFAULT_CHARSET, &filepath)) {
+        return;
+    }
+
+    if (filepath && strlen(filepath) > 0) {
+        if (is_json) {
+            /* Copy current state file to destination */
+            char cmd[1024];
+            snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", g_current_conversation, filepath);
+
+
+            system(cmd);
+        } else {
+            /* Dump clean text from output_text_w to target file */
+            char *text = XmTextGetString(output_text_w);
+            if (text) {
+                FILE *fp = fopen(filepath, "w");
+                if (fp) {
+                    fputs(text, fp);
+                    fclose(fp);
+                }
+                XtFree(text);
+            }
+        }
+    }
+    XtFree(filepath);
+    XtUnmanageChild(dialog);
+}
+
+static void cancel_dialog_cb(Widget dialog, XtPointer client_data, XtPointer call_data)
+{
+    XtUnmanageChild(dialog);
+}
+
+static void show_file_exporter(int is_json)
+{
+    Widget fs_dialog;
+    XmString title = XmStringCreateLocalized(is_json ? "Export Raw State (JSON)" : "Export Readable Notes");
+
+    fs_dialog = XmCreateFileSelectionDialog(toplevel_w, "exportDialog", NULL, 0);
+    XtVaSetValues(fs_dialog, XmNdialogTitle, title, NULL);
+    XmStringFree(title);
+
+    XtAddCallback(fs_dialog, XmNokCallback, execute_export, (XtPointer)(long)is_json);
+    XtAddCallback(fs_dialog, XmNcancelCallback, cancel_dialog_cb, NULL);
+    XtManageChild(fs_dialog);
+}
+
+static void cb_menu_file_export_txt(Widget w, XtPointer client_data, XtPointer call_data) {
+    show_file_exporter(0);
+}
+
+static void cb_menu_file_export_json(Widget w, XtPointer client_data, XtPointer call_data) {
+    show_file_exporter(1);
+}
+
+/* Helper function to copy a file byte-for-byte */
+static int copy_file(const char *src_path, const char *dst_path)
+{
+    FILE *src = fopen(src_path, "rb");
+    if (!src) return -1;
+
+    FILE *dst = fopen(dst_path, "wb");
+    if (!dst) {
+        fclose(src);
+        return -1;
+    }
+
+    char buffer[8192];
+    size_t bytes;
+    while ((bytes = fread(buffer, 1, sizeof(buffer), src)) > 0) {
+        if (fwrite(buffer, 1, bytes, dst) != bytes) {
+            fclose(src);
+            fclose(dst);
+            return -1;
+        }
+    }
+
+    fclose(src);
+    fclose(dst);
+    return 0;
+}
+
+/* Callback executed when the user clicks 'OK' in the File Selection Dialog */
+static void import_file_ok_cb(Widget dialog, XtPointer client_data, XtPointer call_data)
+{
+    XmFileSelectionBoxCallbackStruct *cbs = (XmFileSelectionBoxCallbackStruct *)call_data;
+    char *src_path = NULL;
+
+    /* Extract C-string path from Motif Compound String */
+    if (!XmStringGetLtoR(cbs->value, XmFONTLIST_DEFAULT_TAG, &src_path)) {
+        XtUnmanageChild(dialog);
+        return;
+    }
+
+    /* Verify source file is readable and is a regular file */
+    struct stat st;
+    if (stat(src_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        fprintf(stderr, "Error: Selected path is not a valid regular file: %s\n", src_path);
+        XtFree(src_path);
+        XtUnmanageChild(dialog);
+        return;
+    }
+
+    /* 
+     * Derive clean conversation name from filename:
+     * e.g., "/path/to/my_chat.gemini.json" -> "my_chat"
+     * e.g., "/path/to/backup.json"         -> "backup"
+     */
+    char path_copy[1024];
+    strncpy(path_copy, src_path, sizeof(path_copy) - 1);
+    path_copy[sizeof(path_copy) - 1] = '\0';
+
+    char *base = basename(path_copy);
+    char conv_name[256];
+    strncpy(conv_name, base, sizeof(conv_name) - 1);
+    conv_name[sizeof(conv_name) - 1] = '\0';
+
+    /* Strip known extensions to guess the pure conversation ID */
+    char *ext = strstr(conv_name, ".gemini.json");
+    if (ext) {
+        *ext = '\0';
+    } else {
+        ext = strrchr(conv_name, '.');
+        if (ext) *ext = '\0';
+    }
+
+    /* Fallback if the file was just ".json" */
+    if (strlen(conv_name) == 0) {
+        strncpy(conv_name, "imported_conversation", sizeof(conv_name));
+    }
+
+    /* Build destination matching: %s/%s.gemini.json */
+    char dest_path[1024];
+    snprintf(dest_path, sizeof(dest_path), "%s/%s.gemini.json",
+             g_config.state_dir, conv_name);
+
+    /* Avoid overwriting if source and destination are identical */
+    if (strcmp(src_path, dest_path) != 0) {
+        if (copy_file(src_path, dest_path) == 0) {
+            printf("Imported: '%s' -> '%s'\n", src_path, dest_path);
+        } else {
+            perror("Failed to copy conversation file");
+            XtFree(src_path);
+            XtUnmanageChild(dialog);
+            return;
+        }
+    }
+
+    /* Point active conversation to newly imported target */
+    strncpy(g_current_conversation, dest_path, sizeof(g_current_conversation) - 1);
+    g_current_conversation[sizeof(g_current_conversation) - 1] = '\0';
+
+    XtFree(src_path);
+    XtDestroyWidget(dialog); /* Destroy rather than leak the dialog */
+
+    /* Refresh UI components */
+    refresh_thread_dropdown();
+
+    /* Load imported conversation into viewer if your app has this helper */
+    /* load_conversation_file(g_current_conversation); */
+}
+
+/* File -> Open / Import Menu Callback */
+static void cb_menu_file_open(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Arg args[10];
+    int n = 0;
+    XmString title = XmStringCreateLocalized("Import Conversation File");
+    XmString mask  = XmStringCreateLocalized("*.json");
+
+    XtSetArg(args[n], XmNdialogTitle, title); n++;
+    XtSetArg(args[n], XmNdirMask, mask); n++;
+    XtSetArg(args[n], XmNdialogStyle, XmDIALOG_PRIMARY_APPLICATION_MODAL); n++;
+    XtSetArg(args[n], XmNautoUnmanage, False); n++;
+
+    Widget fs_dialog = XmCreateFileSelectionDialog(toplevel_w, "openDialog", args, n);
+
+    XmStringFree(title);
+    XmStringFree(mask);
+
+    /* Hide the default Help button */
+    XtUnmanageChild(XmFileSelectionBoxGetChild(fs_dialog, XmDIALOG_HELP_BUTTON));
+
+    /* Hook callbacks */
+    XtAddCallback(fs_dialog, XmNokCallback, import_file_ok_cb, NULL);
+    XtAddCallback(fs_dialog, XmNcancelCallback, cancel_dialog_cb, NULL);
+
+    XtManageChild(fs_dialog);
+}
+
+static void delete_cancel_cb(Widget dialog, XtPointer client_data, XtPointer call_data)
+{
+    char *path = (char *)client_data;
+    if (path) free(path);
+    XtDestroyWidget(dialog);
+}
+
+static void delete_confirmed_cb(Widget dialog, XtPointer client_data, XtPointer call_data)
+{
+    char *target_file = (char *)client_data;
+
+    if (target_file && strlen(target_file) > 0) {
+        if (unlink(target_file) == 0) {
+            printf("deleted file %s\n", target_file);
+        } else {
+            perror("unlink failed");
+        }
+
+        /* Clear current conversation if it matches the one deleted */
+        if (strcmp(g_current_conversation, target_file) == 0) {
+            g_current_conversation[0] = '\0'; /* or your app's clear mechanism */
+        }
+
+        XmTextSetString(output_text_w, "");
+        refresh_thread_dropdown();
+    }
+
+    if (target_file) free(target_file);
+    XtDestroyWidget(dialog);
+}
+
+static void cb_menu_file_delete(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget q_dialog;
+    char msg[1024];
+    XmString x_msg;
+    char *target_copy;
+
+    if (strlen(g_current_conversation) == 0) {
+        return; /* Nothing active to delete */
+    }
+
+    snprintf(msg, sizeof(msg), "Permanently delete active conversation file?\n%s", g_current_conversation);
+    x_msg = XmStringCreateLocalized(msg);
+
+    q_dialog = XmCreateQuestionDialog(toplevel_w, "confirmDelete", NULL, 0);
+    XtVaSetValues(q_dialog, 
+        XmNmessageString, x_msg,
+        XmNdialogStyle, XmDIALOG_PRIMARY_APPLICATION_MODAL, /* Prevent interaction elsewhere */
+        NULL);
+    XmStringFree(x_msg);
+
+    /* Duplicate the string so it cannot be mutated or freed while waiting for user confirmation */
+    target_copy = strdup(g_current_conversation);
+
+    XtAddCallback(q_dialog, XmNokCallback, delete_confirmed_cb, (XtPointer)target_copy);
+    XtAddCallback(q_dialog, XmNcancelCallback, delete_cancel_cb, (XtPointer)target_copy);
+    
+    XtManageChild(q_dialog);
+}
+static void cb_menu_file_exit(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    exit(0);
+}
+/*********** FILE callback helpers end **********/
+
 /* Callback: Thread Selected */
 static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
 {
     char *conv_name = (char *)client_data;
+    char msg[2024];
     printf("Selected Context: %s\n", conv_name);
     char *chat_name = (char *)client_data;
     if (!chat_name) return;
@@ -423,17 +836,26 @@ static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
     printf("Switched conversation to: %s (%s)\n", chat_name, g_current_conversation);
 
     /* Clear or reload output text area */
-    XmTextSetString(output_text_w, "--- Switched Conversation ---\n");
+    snprintf( msg, sizeof( msg )-1, "-- Conversation to: %s, file: %s --\n", chat_name, g_current_conversation );
+    append_conversation_text(output_text_w, msg );
+
+   /* 
+    append_conversation_text(output_text_w, "--- Conversation to: ");
+    append_conversation_text(output_text_w, chat_name);
+    append_conversation_text(output_text_w, "in file :");
+    append_conversation_text(output_text_w, g_current_conversation);
+    append_conversation_text(output_text_w, "---\n");
+*/
 
     /* TODO: Call backend helper to reload previous messages from this file into output_text_w */
 }
 
 Widget create_main_menubar(Widget parent)
 {
-    Widget menu_bar, menu_context, cascade_context, compress_item;
-    XmString s_context;
-    Widget menu_edit, cascade_edit;
-    XmString s_edit;
+    Widget menu_bar,  menu_context, compress_item;
+    XmString s_file, s_edit, s_context;
+    Widget menu_file, menu_edit, cascade_file, cascade_edit, cascade_context;
+
     int n;
     Arg args[20];
 
@@ -442,6 +864,31 @@ Widget create_main_menubar(Widget parent)
      * ------------------------------------------------------------- */
     menu_bar = XmCreateMenuBar(parent, "menuBar", NULL, 0);
     XtManageChild(menu_bar);
+
+    /* -------------------------------------------------------------
+     * 1. FILE MENU
+     * ------------------------------------------------------------- */
+    menu_file = XmCreatePulldownMenu(menu_bar, "menuFile", NULL, 0);
+
+    add_menu_item(menu_file, "New Conversation...", "Ctrl<Key>N", "Ctrl+N", new_conv_cb, NULL);
+    add_menu_separator(menu_file);
+    add_menu_item(menu_file, "Export as Plain Text...", NULL, NULL, cb_menu_file_export_txt, NULL);
+    add_menu_item(menu_file, "Export as Raw JSON...", NULL, NULL, cb_menu_file_export_json, NULL);
+    add_menu_item(menu_file, "Import / Conversation...", NULL, NULL, cb_menu_file_open, NULL);
+    add_menu_separator(menu_file);
+    add_menu_item(menu_file, "Delete Current Conversation", NULL, NULL, cb_menu_file_delete, NULL);
+    add_menu_separator(menu_file);
+    add_menu_item(menu_file, "Exit", "Ctrl<Key>Q", "Ctrl+Q", cb_menu_file_exit, NULL);
+
+    s_file = XmStringCreateLocalized("File");
+    cascade_file = XtVaCreateManagedWidget("cascadeFile",
+        xmCascadeButtonWidgetClass, menu_bar,
+        XmNlabelString, s_file,
+        XmNmnemonic, 'F',
+        XmNsubMenuId, menu_file,
+        NULL);
+    XmStringFree(s_file);
+    
 
     /* -------------------------------------------------------------
      * 2. EDIT MENU
@@ -485,6 +932,8 @@ Widget create_main_menubar(Widget parent)
     return menu_bar;
 }
 
+
+
 int main(int argc, char *argv[])
 {
     XtAppContext app_context;
@@ -494,35 +943,11 @@ int main(int argc, char *argv[])
     Widget send_btn;
     Widget menu_bar;
 
-
-    
     Arg args[20];
     int n;
 
-    config_load(NULL);
-    strncpy(g_current_model, g_config.default_model, sizeof(g_current_model) - 1);
-    g_current_model[sizeof(g_current_model) - 1] = '\0';
+    select_first_conversation(); 
 
-    int conv_count = 0;
-    char **conversation_list = config_list_conversations(&conv_count);
-
-    if (conversation_list && conv_count > 0) {
-        /* Construct full path: ~/.lseai/conversations/<chat_name>.gemini.json */
-        snprintf(g_current_conversation, sizeof(g_current_conversation),
-                 "%s/%s.gemini.json", g_config.state_dir, conversation_list[0]);
-    } else {
-        /* Default fallback path */
-        snprintf(g_current_conversation, sizeof(g_current_conversation),
-                 "%s/default.gemini.json", g_config.state_dir);
-    }
-    g_current_conversation[sizeof(g_current_conversation) - 1] = '\0';
-
-    /* Make sure the state file exists with empty JSON {"contents":[]} */
-    init_state_file();
-    /* Now it is safe to free the temporary directory list */
-    if (conversation_list) {
-        config_free_conversation_list(conversation_list, conv_count);
-    }
 
        /* Initialize active model: match default_model from config, or pick first available */
     g_current_model[0] = '\0';
@@ -597,38 +1022,11 @@ int main(int argc, char *argv[])
     XtSetArg(args[n], XmNorientation, XmHORIZONTAL); n++;
     XtSetArg(args[n], XmNpacking, XmPACK_TIGHT); n++;
     top_bar = XmCreateRowColumn(form, "topBar", args, n);
+    top_bar_w = top_bar;
     XtManageChild(top_bar);
-
-    /* Thread Dropdown (OptionMenu) */
-    int chat_count = 0;
-    char **chats = config_list_conversations(&chat_count);
-    Widget initial_btn = NULL;
-    char *initial_chat_name = NULL;
 
     conv_pane = XmCreatePulldownMenu(top_bar, "convPane", NULL, 0);
     conv_pane_w = conv_pane;
-
-    if (chat_count == 0) {
-        /* No saved files found: initialize "default" */
-        initial_chat_name = strdup("default");
-        initial_btn = XmCreatePushButton(conv_pane, initial_chat_name, NULL, 0);
-        XtManageChild(initial_btn);
-        XtAddCallback(initial_btn, XmNactivateCallback, conv_select_cb, (XtPointer)initial_chat_name);
-    } else {
-        int i;
-        for (i = 0; i < chat_count; i++) {
-            /* Keep persistent heap string for each callback client_data */
-            char *saved_name = strdup(chats[i]);
-            Widget btn = XmCreatePushButton(conv_pane, saved_name, NULL, 0);
-            XtManageChild(btn);
-            XtAddCallback(btn, XmNactivateCallback, conv_select_cb, (XtPointer)saved_name);
-
-            if (i == 0) {
-                initial_btn = btn;
-                initial_chat_name = saved_name;
-            }
-        }
-    }
 
     n = 0;
     XtSetArg(args[n], XmNlabelString, XmStringCreateLocalized("Chat / Context:")); n++;
@@ -636,13 +1034,7 @@ int main(int argc, char *argv[])
     conv_menu_w = XmCreateOptionMenu(top_bar, "convOptionMenu", args, n);
     XtManageChild(conv_menu_w);
 
-    /* --- INITIALIZE GLOBAL VARIABLE ON APPLICATION STARTUP --- */
-    if (initial_chat_name) {
-        snprintf(g_current_conversation, sizeof(g_current_conversation),
-                 "%s/%s.gemini.json", g_config.state_dir, initial_chat_name);
-        init_state_file();
-        printf("Initial conversation set to: %s\n", g_current_conversation);
-    }
+    refresh_thread_dropdown();
 
     /* New Chat Button */
     n = 0;

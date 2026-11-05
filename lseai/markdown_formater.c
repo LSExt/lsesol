@@ -88,12 +88,12 @@ char *format_markdown_to_ascii(const char *src)
                 }
                 lang[lang_len] = '\0';
 
-                out_idx += sprintf(&out[out_idx], "+--- [ %s%s ] --------------------------------------------------",
+                out_idx += sprintf(&out[out_idx], "+--- [ %s%s ] --------------------------------------------------\n",
                                    lang_len > 0 ? lang : "Code",
                                    lang_len > 0 ? " Code" : "");
                 in_code_block = 1;
             } else {
-                out_idx += sprintf(&out[out_idx], "+----------------------------------------------------------------");
+                out_idx += sprintf(&out[out_idx], "+----------------------------------------------------------------\n");
                 in_code_block = 0;
             }
             continue;
