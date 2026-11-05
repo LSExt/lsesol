@@ -23,6 +23,9 @@
 #include <Xm/SelectioB.h>   /* Include this if you also use XmCreatePromptDialog */
 #include "config.h"
 #include "globals.h"
+#if defined(SOLARIS2) || defined(__solaris__) || defined(__SVR4)
+#include "libgen.h"
+#endif
 
 
 /* Global widget handles needed for backend hooks */
