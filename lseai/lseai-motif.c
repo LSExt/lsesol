@@ -1237,6 +1237,60 @@ static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
     /* TODO: Call backend helper to reload previous messages from this file into output_text_w */
 }
 
+/******* popup callbacks ****/
+/* Generic handler to position and display Motif popup menus */
+static void popup_menu_handler(Widget w, XtPointer client_data, XEvent *event, Boolean *continue_to_dispatch)
+{
+    Widget popup = (Widget)client_data;
+    XButtonPressedEvent *be = (XButtonPressedEvent *)event;
+
+    /* Use Button3 (Right-click) so it doesn't block Button 1 text selection */
+    if (be->button == Button3) {
+        /* Set focus directly to this widget to ensure Cut/Copy/Paste acts on it */
+        XmProcessTraversal(w, XmTRAVERSE_CURRENT);
+
+        /* Position the popup menu at mouse pointer coordinates */
+        XmMenuPosition(popup, be);
+        XtManageChild(popup);
+
+        *continue_to_dispatch = False; /* Event handled */
+    }
+}
+
+static void cb_popup_cut(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget text_w = (Widget)client_data;
+    if (text_w && XmIsText(text_w)) {
+        XmTextCut(text_w, CurrentTime);
+    }
+}
+
+static void cb_popup_copy(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget text_w = (Widget)client_data;
+    if (text_w && XmIsText(text_w)) {
+        XmTextCopy(text_w, CurrentTime);
+    }
+}
+
+static void cb_popup_paste(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget text_w = (Widget)client_data;
+    if (text_w && XmIsText(text_w)) {
+        XmTextPaste(text_w);
+    }
+}
+
+static void cb_popup_select_all(Widget w, XtPointer client_data, XtPointer call_data)
+{
+    Widget text_w = (Widget)client_data;
+    if (text_w && XmIsText(text_w)) {
+        XmTextSetSelection(text_w, 0, XmTextGetLastPosition(text_w), CurrentTime);
+    }
+}
+
+/******* end popup callbacks ***/
+
 Widget create_main_menubar(Widget parent)
 {
     Widget menu_bar,  menu_context, compress_item;
@@ -1537,6 +1591,39 @@ int main(int argc, char *argv[])
 
     output_text_w = XmCreateScrolledText(form, "outputText", args, n);
     XtManageChild(output_text_w);
+
+
+    Widget popup_input, popup_output;
+
+    /* -------------------------------------------------------------
+     * Popup Menu for Input Text (Cut, Copy, Paste, Select All, Clear)
+     * ------------------------------------------------------------- */
+    popup_input = XmCreatePopupMenu(input_text_w, "popupInput", NULL, 0);
+
+    add_menu_item(popup_input, "Cut",        NULL, NULL, cb_popup_cut,        (XtPointer)input_text_w);
+    add_menu_item(popup_input, "Copy",       NULL, NULL, cb_popup_copy,       (XtPointer)input_text_w);
+    add_menu_item(popup_input, "Paste",      NULL, NULL, cb_popup_paste,      (XtPointer)input_text_w);
+    add_menu_separator(popup_input);
+    add_menu_item(popup_input, "Select All", NULL, NULL, cb_popup_select_all, (XtPointer)input_text_w);
+    add_menu_separator(popup_input);
+    add_menu_item(popup_input, "Clear Prompt", NULL, NULL, cb_menu_edit_clear_prompt, NULL);
+
+    /* Hook ButtonPress event to the text widget */
+    XtAddEventHandler(input_text_w, ButtonPressMask, False, popup_menu_handler, (XtPointer)popup_input);
+
+    /* -------------------------------------------------------------
+     * Popup Menu for Output Pane (Read-Only: Copy, Select All, Clear)
+     * ------------------------------------------------------------- */
+    popup_output = XmCreatePopupMenu(output_text_w, "popupOutput", NULL, 0);
+
+    add_menu_item(popup_output, "Copy",        NULL, NULL, cb_popup_copy,       (XtPointer)output_text_w);
+    add_menu_separator(popup_output);
+    add_menu_item(popup_output, "Select All",  NULL, NULL, cb_popup_select_all, (XtPointer)output_text_w);
+    add_menu_separator(popup_output);
+    add_menu_item(popup_output, "Clear Screen", NULL, NULL, cb_menu_edit_clear_screen, NULL);
+
+    /* Hook ButtonPress event to the output text widget */
+    XtAddEventHandler(output_text_w, ButtonPressMask, False, popup_menu_handler, (XtPointer)popup_output);
 
 
     /* Show window and enter event loop */
