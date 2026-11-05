@@ -239,10 +239,16 @@ char *format_markdown_to_ascii(const char *src)
                 size_t k = lead_ws + 3;
 
                 /* Skip whitespace after ``` */
-                while (k < line_len && isspace((unsigned char)line_start[k])) k++;
+                while (k < line_len && isspace((unsigned char)line_start[k])) {
+                    k++;
+                }
 
-                /* Capture the language/label cleanly */
+                /* Capture only the language token (stop at space, newline, or punctuation) */
                 while (k < line_len && lang_len < (sizeof(lang) - 1)) {
+                    unsigned char c = (unsigned char)line_start[k];
+                    if (isspace(c) || c == '\\' || c == '/' || c == '*' || c == ';') {
+                        break;
+                    }
                     lang[lang_len++] = line_start[k++];
                 }
                 /* Trim trailing spaces from lang */
@@ -252,7 +258,7 @@ char *format_markdown_to_ascii(const char *src)
                 lang[lang_len] = '\0';
 
                 if (lang_len > 0) {
-                    out_idx += sprintf(&out[out_idx], "+--- [ %s ] --------------------------------------------------\n", lang);
+                    out_idx += snprintf(&out[out_idx], 125, "+--- [ %s ] --------------------------------------------------\n", lang);
                 } else {
                     out_idx += sprintf(&out[out_idx], "+--- [ Code ] --------------------------------------------------\n");
                 }
@@ -404,18 +410,32 @@ char *format_markdown_to_ascii(const char *src)
         }
 
         /* -------------------------------------------------------------
-         * 4. Bullet Points (* item or - item)
+         * 4. Bullet Points (* item, - item, or indented bullets)
          * ------------------------------------------------------------- */
-        if (line_len >= 2 && (line_start[0] == '*' || line_start[0] == '-') && line_start[1] == ' ') {
-            out[out_idx++] = ' ';
+        size_t b_indent = 0;
+        while (b_indent < line_len && (line_start[b_indent] == ' ' || line_start[b_indent] == '\t')) {
+            b_indent++;
+        }
+
+        if ((line_len - b_indent) >= 2 && 
+            (line_start[b_indent] == '*' || line_start[b_indent] == '-') && 
+            line_start[b_indent + 1] == ' ') 
+        {
+            /* Preserve indentation + add clean bullet symbol */
+            for (size_t sp = 0; sp < b_indent; sp++) out[out_idx++] = ' ';
             out[out_idx++] = ' ';
             out[out_idx++] = 'o';
             out[out_idx++] = ' ';
-            memcpy(&out[out_idx], line_start + 2, line_len - 2);
-            out_idx += (line_len - 2);
+
+            const char *item_text = line_start + b_indent + 2;
+            size_t item_len = line_len - (b_indent + 2);
+
+            /* Format the bullet text through prose formatter so arrows/macros resolve */
+            out_idx += format_prose_line(item_text, item_len, &out[out_idx], out_cap - out_idx);
             out[out_idx++] = '\n';
             continue;
         }
+
         /* -------------------------------------------------------------
          * 5. Regular Prose Line (Arrows & Inline Formatting)
          * ------------------------------------------------------------- */
