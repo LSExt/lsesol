@@ -13,7 +13,7 @@ case "${build_arch}-${gnu_os_ver}" in
         gcc_cpu="--with-arch=${gcc_arch} --with-tune=pentium"
         gmp_host="i386-${vendor}-solaris${gnu_os_ver}"
         ;;
-    sparc-*)
+    sparc-*|ultrasparc)
         # Enforce TARGET_CPU check for SPARC builds
         if [ -z "${TARGET_CPU}" ]; then
             echo "======================================================================" >&2
@@ -24,7 +24,8 @@ case "${build_arch}-${gnu_os_ver}" in
             echo "" >&2
             echo "  v7 (sun4c) : SPARCstation 1, 1+, 2, IPC, IPX" >&2
             echo "  v8 (sun4m) : SPARCstation 4, 5, 10, 20, LX, Classic, Voyager" >&2
-            echo "  v9 (sun4u) : Ultra 1, 2, 5, 10, 30, 60, E250, E450" >&2
+            echo "  ultrasparc (sun4u 32-bit) : Ultra 1,2,5,10,30,60,E250,E450,etc" >&2
+            echo "  v9 (sun4u) : (sun4u 64-bit Solaris 7 and up) Ultra 1, 2, 5, 10, 30, 60, E250, E450" >&2
             echo "" >&2
             echo "Note: Binaries run on the target ISA and upwards." >&2
             echo "  * A v8 binary will NOT work on v7 hardware (causes SIGILL)." >&2
@@ -33,20 +34,46 @@ case "${build_arch}-${gnu_os_ver}" in
             exit 1
         fi
 
-        # Clean/normalize TARGET_CPU (strip 'sparc' prefix if passed as sparcv7/sparcv8)
+        # Clean/normalize TARGET_CPU
         case "${TARGET_CPU}" in
-            v7|sparcv7) gcc_arch="v7" ;;
-            v8|sparcv8) gcc_arch="v8" ;;
-            v9|sparcv9) gcc_arch="v9" ;;
+            v7|sparcv7)
+                gcc_arch="v7"
+                gmp_cpu="sparc"
+                ;;
+            v8|sparcv8)
+                gcc_arch="v8"
+                gmp_cpu="sparcv8"
+                ;;
+            v9|sparcv9)
+                gcc_arch="v9"
+                # On 32-bit Solaris, v9 instructions with 32-bit pointers is v8plus:
+                gmp_cpu="sparcv8plus"
+                ;;
+            ultrasparc|v8plus|sparcv8plus)
+                gcc_arch="ultrasparc"
+                gmp_cpu="sparcv8plus"
+                ;;
             *)
-                echo "ERROR: Invalid TARGET_CPU '${TARGET_CPU}'! Allowed: v7, v8, v9" >&2
+                echo "ERROR: Invalid TARGET_CPU '${TARGET_CPU}'! Allowed: v7, v8, v9, ultrasparc" >&2
                 exit 1
                 ;;
         esac
 
         gcc_cpu="--with-cpu=${gcc_arch}"
-        gmp_host="sparc-${vendor}-solaris${gnu_os_ver}"
+
+        # GMP host triplet (must not contain '+' symbol; autotools uses sparcv8plus)
+        gmp_host="${gmp_cpu}-${vendor}-solaris${gnu_os_ver}"
+        
+        # When compiling GMP on Solaris 2.5.1 for ultrasparc/v8plus,
+        # explicitly enforce ABI=32 so GMP uses mpn/sparc32/v9 assembly
+        # without attempting to emit 64-bit objects.
+        if [ "${gmp_cpu}" = "sparcv8plus" ]; then
+            gmp_abi="ABI=32"
+        else
+            gmp_abi=""
+        fi
         ;;
+
     *)
         echo "ERROR: Unsupported build architecture and OS combination: ${build_arch}-${gnu_os_ver}" >&2
         exit 1
