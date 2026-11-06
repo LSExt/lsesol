@@ -215,9 +215,7 @@ char *format_turns_for_display(const char *raw_turns_json)
         }
 
         /* Determine header tag based on role */
-        const char *tag = (strcmp(role, "user") == 0) ? "[You]" : "[Gemini]";
-
-         
+        const char *tag = (strcmp(role, "user") == 0) ? PROMPT_HEADER : RESPONSE_HEADER;
 
         /* Format: "\n[Tag]:\n<text>\n\n" */
         size_t block_len = strlen(tag) + strlen(text) + 64;
