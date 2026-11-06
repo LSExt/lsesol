@@ -46,10 +46,15 @@ configure_args=(
     # Clears the version-script mapfile generator variable
     shared_mapfile=""
 )
-
 # 2. Target architecture MUST be appended AT THE VERY END
 if [ "$arch" = "sparc" ]; then
-    configure_args+=(solaris-sparc${gcc_arch}-gcc)
+    if [ "${gcc_arch}" = "ultrasparc" ]; then
+        configure_args+=(solaris-sparcv9-gcc)
+    elif [ "${gcc_arch}" = "v9" ]; then
+        configure_args+=(solaris64-sparcv9-gcc)
+    else
+        configure_args+=(solaris-sparc${gcc_arch}-gcc)
+    fi
 else
     configure_args+=(386 solaris-x86-gcc)
 fi
