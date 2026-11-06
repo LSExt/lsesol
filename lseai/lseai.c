@@ -7,6 +7,8 @@
  */
 
 #include "lseai.h"
+#include "globals.h"
+#include "config.h"
 
 /* Set the terminal title when supported */
 void set_terminal_title( const char *title){
@@ -21,23 +23,25 @@ void set_terminal_title( const char *title){
 #define LSEAI_KEY_MAX    256
 
 /* --- Global CLI / Session Configuration Variables --- */
-static char config_file_path[LSEAI_PATH_MAX]    = "";
+static char config_file_path[LSEAI_PATH_MAX]    = "${HOME}/.lseaiconf";
+static char context_dir[LSEAI_PATH_MAX]         = "${HOME}/.lseai/conversations/";
 static char context_file[LSEAI_PATH_MAX]        = "";
 static char context_name[LSEAI_NAME_MAX]        = "";
-static char context_dir[LSEAI_PATH_MAX]         = "";
 static char attached_file_path[LSEAI_PATH_MAX]  = "";
 static char api_key[LSEAI_KEY_MAX]              = "";
-static char model_name[LSEAI_NAME_MAX]          = "gemini-1.5-flash"; /* default model */
+static char model_name[LSEAI_NAME_MAX]          = "gemini-3.8-flash"; /* default model */
 
 static int  has_attachment                      = 0;
 static int  auto_summarize                      = 1; /* enabled by default */
 
+/* forward declaration */
+int parse_args(int argc, char *argv[]);
 
 static void print_help(void)
 {
     printf("Usage: lseai [OPTIONS]\n\n");
     printf("Options:\n");
-    printf("  --config <path>             Config file (default: ~/.lseai.conf)\n");
+    printf("  --config <path>             Config file (default: ~/.lseaiconf)\n");
     printf("  --context-file-path <path>  Explicit path to a chat JSON file\n");
     printf("  --context-name <name>       Chat session name (<name>.gemini.json)\n");
     printf("  --context-path <dir>        Directory storing conversations\n");
@@ -48,18 +52,59 @@ static void print_help(void)
     printf("  --help, -h                  Display this help message and exit\n\n");
 }
 
+/**
+ * expand_home_dir:
+ * Replaces leading "${HOME}" or "~" with the user's actual HOME directory.
+ * Safe bounded buffer writes using snprintf.
+ */
+static void expand_home_dir(char *path, size_t max_len)
+{
+    const char *home = getenv("HOME");
+    char temp[LSEAI_PATH_MAX];
+
+    if (!path || path[0] == '\0') return;
+    if (!home) home = ".";
+
+    /* Case 1: Starts with "${HOME}" */
+    if (strncmp(path, "${HOME}", 7) == 0) {
+        snprintf(temp, sizeof(temp), "%s%s", home, path + 7);
+        snprintf(path, max_len, "%s", temp);
+    }
+    /* Case 2: Starts with "~/" */
+    else if (path[0] == '~' && (path[1] == '/' || path[1] == '\0')) {
+        snprintf(temp, sizeof(temp), "%s%s", home, path + 1);
+        snprintf(path, max_len, "%s", temp);
+    }
+}
+
 
 
 int main(int argc, char **argv) {
+/*
     const char *api_key = getenv("GEMINI_API_KEY");
     const char *model_name = getenv("GEMINI_MODEL");
     const char *state_file = get_state_file_path();
+    */
+    const char *api_key;
+    const char *model_name;
+
+    parse_args( argc, argv );
+
+    /* Expand any paths that still have ${HOME} or ~ */
+    expand_home_dir(config_file_path, sizeof(config_file_path));
+    expand_home_dir(context_dir, sizeof(context_dir));
+    if (context_file[0] != '\0') {
+        expand_home_dir(context_file, sizeof(context_file));
+    }
+    if (attached_file_path[0] != '\0') {
+        expand_home_dir(attached_file_path, sizeof(attached_file_path));
+    }
 
     if (!model_name) {
         model_name = DEFAULT_MODEL;
     }
 
-    set_terminal_title( state_file );
+    set_terminal_title( g_current_conversation);
 
     if (!api_key) {
         fprintf(stderr, "Error: GEMINI_API_KEY environment variable not set.\n");
@@ -68,15 +113,15 @@ int main(int argc, char **argv) {
     }
 
     printf("Gemini Terminal Interface (SPARC / libcurl / Readline)\n");
-    printf("Active Model: %s\n", model_name);
-    printf("Conversation Thread: %s\n", state_file);
+    printf("Active Model: %s\n", g_current_model);
+    printf("Conversation Thread: %s\n", g_current_conversation);
     printf("Type 'exit' or 'quit' to end session. \n" );
     printf("Reset thread with '/reset'. Summarize thread with '/summarize'.\n\n");
     init_state_file();
 
 
     char *line;
-    while ((line = read_multiline_prompt(state_file)) != NULL) {
+    while ((line = read_multiline_prompt(g_current_conversation)) != NULL) {
         if (strlen(line) == 0) {
             free(line);
             continue;

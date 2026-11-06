@@ -158,6 +158,40 @@ static void toggle_input_expand_cb(Widget w, XtPointer client_data, XtPointer ca
     }
 }
 
+/**
+ * Loads the last N turns of the selected context into the output text widget.
+ */
+void refresh_conversation_view(Widget text_w, const char *filepath, int preserve_turns)
+{
+    if (!text_w || !filepath) return;
+
+    /* Get total turns in file first (assumes count_turns_in_file exists) */
+    int total_turns = count_conversation_turns(filepath);
+    int start_turn = 0;
+
+    if (total_turns > preserve_turns) {
+        start_turn = total_turns - preserve_turns;
+    }
+
+    char *raw_slice = extract_raw_turns_json(filepath, start_turn, preserve_turns);
+    if (!raw_slice) {
+        /* Blank the view or show a subtle placeholder if context has no turns */
+        XmTextSetString(text_w, "--- Empty or New Conversation ---\n");
+        return;
+    }
+
+    char *display_text = format_turns_for_display(raw_slice);
+    free(raw_slice);
+
+    if (display_text) {
+        append_conversation_text(text_w, display_text);
+
+        free(display_text);
+    } else {
+        XmTextSetString(text_w, "");
+    }
+}
+
 
 /* Forward declaration so new_chat_ok_cb can reference it */
 static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data);
@@ -739,10 +773,11 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
                 if (ascii_text) {
                     /* Format Markdown headers, bullets, code boxes and tables */
                     char *formatted = format_markdown_to_ascii(ascii_text);
-
-                    append_conversation_text(output_text_w, RESPONSE_HEADER);
-                    append_conversation_text(output_text_w, formatted);
-                    
+                    if(formatted){
+                        append_conversation_text(output_text_w, RESPONSE_HEADER);
+                        append_conversation_text(output_text_w, formatted);
+                        free(formatted);
+                    }
                     /* Clean up heap */
                     free(ascii_text);
                 }
@@ -1266,8 +1301,12 @@ static void conv_select_cb(Widget w, XtPointer client_data, XtPointer call_data)
     printf("Switched conversation to: %s (%s)\n", chat_name, g_current_conversation);
 
     /* Clear or reload output text area */
+    /*
     snprintf( msg, sizeof( msg )-1, "-- Conversation to: %s, file: %s --\n", chat_name, g_current_conversation );
     append_conversation_text(output_text_w, msg );
+    */
+
+    refresh_conversation_view(output_text_w, g_current_conversation, 5 );
 
 
     /* TODO: Call backend helper to reload previous messages from this file into output_text_w */

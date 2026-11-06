@@ -29,6 +29,7 @@ char *json_escape(const char *src);
 char *extract_text_field(const char *json_resp);
 char *extract_turns_for_summary(const char *filepath, int start_turn, int count);
 char *extract_raw_turns_json(const char *filepath, int start_turn, int count);
+char *format_turns_for_display(const char *raw_turns_json);
 
 
 /* Prototypes */

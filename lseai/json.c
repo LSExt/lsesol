@@ -53,6 +53,8 @@ char *extract_text_field(const char *json_resp) {
     return text;
 }
 
+
+
 /* Escape string characters for raw JSON injection */
 char *json_escape(const char *src) {
     size_t len = strlen(src);
@@ -173,6 +175,85 @@ int count_conversation_turns(const char *filepath)
     free(raw);
     return count;
 }
+
+/**
+ * Parses a JSON slice of turns returned by extract_raw_turns_json()
+ * and prints them sequentially into a dynamically allocated buffer.
+ * Caller must free() the returned pointer.
+ */
+char *format_turns_for_display(const char *raw_turns_json)
+{
+    if (!raw_turns_json || *raw_turns_json == '\0') {
+        return NULL;
+    }
+
+    size_t cap = 8192;
+    size_t len = 0;
+    char *buf = malloc(cap);
+    if (!buf) return NULL;
+    buf[0] = '\0';
+
+    const char *p = raw_turns_json;
+
+    while (*p) {
+        char *role = NULL;
+        char *text = NULL;
+
+        /* Locate next "role" field */
+        p = scan_json_field(p, "role", &role);
+        if (!p || !role) {
+            if (role) free(role);
+            break;
+        }
+
+        /* Locate matching "text" field */
+        p = scan_json_field(p, "text", &text);
+        if (!p || !text) {
+            free(role);
+            if (text) free(text);
+            break;
+        }
+
+        /* Determine header tag based on role */
+        const char *tag = (strcmp(role, "user") == 0) ? "[You]" : "[Gemini]";
+
+         
+
+        /* Format: "\n[Tag]:\n<text>\n\n" */
+        size_t block_len = strlen(tag) + strlen(text) + 64;
+        while (len + block_len >= cap) {
+            cap *= 2;
+            char *new_buf = realloc(buf, cap);
+            if (!new_buf) {
+                free(buf);
+                free(role);
+                free(text);
+                return NULL;
+            }
+            buf = new_buf;
+        }
+
+                char *ascii_text = clean_to_ascii_string(text);
+                if (ascii_text) {
+                    /* Format Markdown headers, bullets, code boxes and tables */
+                    char *formatted = format_markdown_to_ascii(ascii_text);
+                    if(formatted){
+        				len += snprintf(buf + len, cap - len,
+        				                "----------------------------------------\n"
+        				                "%s:\n%s\n\n",
+        				                tag, formatted);
+                        free(formatted);
+                    }
+                    free(ascii_text);
+                }
+
+        free(role);
+        free(text);
+    }
+
+    return buf;
+}
+
 
 /* -------------------------------------------------------------
  * 2. Extract turns for summarization
