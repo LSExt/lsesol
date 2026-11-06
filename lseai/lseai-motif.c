@@ -641,13 +641,15 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
     char *prompt = XmTextGetString(input_text_w);
     
     if (prompt && strlen(prompt) > 0) {
-        /* 
-         * TODO: Plug in your Gemini API call here.
-         * For now, append what the user typed to the output area.
-         */
-        XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), PROMPT_HEADER);
-        XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), prompt);
+        append_conversation_text(output_text_w, PROMPT_HEADER);
+        append_conversation_text(output_text_w, prompt);
 
+        if (is_input_expanded){
+          toggle_input_expand_cb(w, client_data, call_data);
+        }
+        
+
+        force_motif_render(output_text_w);
          
         /* Load thread state and insert current prompt */
         char *current_state = read_state_file();
@@ -690,7 +692,6 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
             return;
         }
 
-        force_motif_render(output_text_w);
 
         /* 4. Use snprintf for bounded write */
         snprintf(full_payload, payload_size,
@@ -735,14 +736,11 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
             if (text) {
                 char *ascii_text = clean_to_ascii_string(text);
                 if (ascii_text) {
-                    /* Format Markdown headers, bullets, and code boxes */
+                    /* Format Markdown headers, bullets, code boxes and tables */
                     char *formatted = format_markdown_to_ascii(ascii_text);
 
-                    /* Insert into output scrolled text widget */
-
-                    XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), RESPONSE_HEADER);
-                    XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), formatted );
-                    XmTextShowPosition(output_text_w, XmTextGetLastPosition(output_text_w));
+                    append_conversation_text(output_text_w, RESPONSE_HEADER);
+                    append_conversation_text(output_text_w, formatted);
                     
                     /* Clean up heap */
                     free(ascii_text);
@@ -769,9 +767,7 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
         if (escaped_prompt) free(escaped_prompt);
         free(full_payload);
 
-        
-        XmTextInsert(output_text_w, XmTextGetLastPosition(output_text_w), TURN_DIVIDER );
-
+        append_conversation_text(output_text_w, TURN_DIVIDER);
 
         /* Scroll to bottom */
         XmTextShowPosition(output_text_w, XmTextGetLastPosition(output_text_w));
