@@ -320,7 +320,7 @@ char *extract_turns_for_summary(const char *filepath, int start_turn, int count)
                 out = (char *)realloc(out, cap);
             }
 
-            len += sprintf(out + len, "%s: %s\n\n", display_role, text);
+            len += sprintf(out + len, "%s%s\n\n", display_role, text);
             extracted++;
         }
 
