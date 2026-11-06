@@ -169,11 +169,15 @@ void refresh_conversation_view(Widget text_w, const char *filepath, int preserve
     int total_turns = count_conversation_turns(filepath);
     int start_turn = 0;
 
+/*
     if (total_turns > preserve_turns) {
         start_turn = total_turns - preserve_turns;
     }
 
     char *raw_slice = extract_raw_turns_json(filepath, start_turn, preserve_turns);
+    */
+    /* restore all turns, in the history */
+    char *raw_slice = extract_raw_turns_json(filepath, 0, total_turns);
     if (!raw_slice) {
         /* Blank the view or show a subtle placeholder if context has no turns */
         XmTextSetString(text_w, "--- Empty or New Conversation ---\n");
