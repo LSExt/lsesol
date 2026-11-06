@@ -32,6 +32,7 @@
 /* Global widget handles needed for backend hooks */
 static Widget output_text_w;
 static Widget input_text_w;
+static Widget expand_btn_w;
 static Widget conv_menu_w;
 static Widget conv_pane_w;
 static Widget model_menu_w;
@@ -645,7 +646,7 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
         append_conversation_text(output_text_w, prompt);
 
         if (is_input_expanded){
-          toggle_input_expand_cb(w, client_data, call_data);
+          toggle_input_expand_cb(expand_btn_w, client_data, call_data);
         }
         
 
@@ -1600,6 +1601,7 @@ int main(int argc, char *argv[])
     expand_btn = XmCreatePushButton(form, "Expand", args, n);
     XtManageChild(expand_btn);
     XtAddCallback(expand_btn, XmNactivateCallback, toggle_input_expand_cb, NULL);
+    expand_btn_w = expand_btn;
 
 
     /* Prompt Input Area (Scrolled multi-line text at bottom) */
