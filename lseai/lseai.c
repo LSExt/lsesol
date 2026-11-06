@@ -16,6 +16,39 @@ void set_terminal_title( const char *title){
 }
 
 
+#define LSEAI_PATH_MAX   1024
+#define LSEAI_NAME_MAX   256
+#define LSEAI_KEY_MAX    256
+
+/* --- Global CLI / Session Configuration Variables --- */
+static char config_file_path[LSEAI_PATH_MAX]    = "";
+static char context_file[LSEAI_PATH_MAX]        = "";
+static char context_name[LSEAI_NAME_MAX]        = "";
+static char context_dir[LSEAI_PATH_MAX]         = "";
+static char attached_file_path[LSEAI_PATH_MAX]  = "";
+static char api_key[LSEAI_KEY_MAX]              = "";
+static char model_name[LSEAI_NAME_MAX]          = "gemini-1.5-flash"; /* default model */
+
+static int  has_attachment                      = 0;
+static int  auto_summarize                      = 1; /* enabled by default */
+
+
+static void print_help(void)
+{
+    printf("Usage: lseai [OPTIONS]\n\n");
+    printf("Options:\n");
+    printf("  --config <path>             Config file (default: ~/.lseai.conf)\n");
+    printf("  --context-file-path <path>  Explicit path to a chat JSON file\n");
+    printf("  --context-name <name>       Chat session name (<name>.gemini.json)\n");
+    printf("  --context-path <dir>        Directory storing conversations\n");
+    printf("  --attach-file <file>        Attach a file (image/audio/text) to first request\n");
+    printf("  --api-key <key|ENV:var>     API key literal or environment variable reference\n");
+    printf("  --model <model>             Model name (overrides config)\n");
+    printf("  --no-auto-summarize         Disable automatic session summarization\n");
+    printf("  --help, -h                  Display this help message and exit\n\n");
+}
+
+
 
 int main(int argc, char **argv) {
     const char *api_key = getenv("GEMINI_API_KEY");
@@ -124,6 +157,81 @@ int main(int argc, char **argv) {
         if (escaped_prompt) free(escaped_prompt);
         free(full_payload);
         free(line);
+    }
+
+    return 0;
+}
+
+/* Helper macro for extracting argument values cleanly */
+#define REQUIRE_PARAM_ARG(opt_name) do { \
+    param_counter++; \
+    if (param_counter >= argc) { \
+        fprintf(stderr, "ERROR: Option '%s' requires a value.\n", opt_name); \
+        exit(1); \
+    } \
+} while(0)
+
+
+
+int parse_args(int argc, char *argv[])
+{
+    int param_counter = 1;
+
+    while (param_counter < argc) {
+        if (strcmp(argv[param_counter], "--config") == 0) {
+            REQUIRE_PARAM_ARG("--config");
+            snprintf(config_file_path, sizeof(config_file_path), "%s", argv[param_counter]);
+        }
+        else if (strcmp(argv[param_counter], "--context-file-path") == 0) {
+            REQUIRE_PARAM_ARG("--context-file-path");
+            snprintf(context_file, sizeof(context_file), "%s", argv[param_counter]);
+        }
+        else if (strcmp(argv[param_counter], "--context-name") == 0) {
+            REQUIRE_PARAM_ARG("--context-name");
+            /* Formulate <name>.gemini.json */
+            snprintf(context_name, sizeof(context_name), "%s.gemini.json", argv[param_counter]);
+        }
+        else if (strcmp(argv[param_counter], "--context-path") == 0) {
+            REQUIRE_PARAM_ARG("--context-path");
+            snprintf(context_dir, sizeof(context_dir), "%s", argv[param_counter]);
+        }
+        else if (strcmp(argv[param_counter], "--attach-file") == 0) {
+            REQUIRE_PARAM_ARG("--attach-file");
+            snprintf(attached_file_path, sizeof(attached_file_path), "%s", argv[param_counter]);
+            has_attachment = 1;
+        }
+        else if (strcmp(argv[param_counter], "--api-key") == 0) {
+            REQUIRE_PARAM_ARG("--api-key");
+            if (strncmp(argv[param_counter], "ENV:", 4) == 0) {
+                const char *env_var = argv[param_counter] + 4;
+                char *val = getenv(env_var);
+                if (!val) {
+                    fprintf(stderr, "ERROR: Environment variable '%s' not set.\n", env_var);
+                    exit(1);
+                }
+                snprintf(api_key, sizeof(api_key), "%s", val);
+            } else {
+                snprintf(api_key, sizeof(api_key), "%s", argv[param_counter]);
+            }
+        }
+        else if (strcmp(argv[param_counter], "--model") == 0) {
+            REQUIRE_PARAM_ARG("--model");
+            snprintf(model_name, sizeof(model_name), "%s", argv[param_counter]);
+        }
+        else if (strcmp(argv[param_counter], "--no-auto-summarize") == 0) {
+            auto_summarize = 0;
+        }
+        else if (strcmp(argv[param_counter], "--help") == 0 || strcmp(argv[param_counter], "-h") == 0) {
+            print_help();
+            exit(0);
+        }
+        else {
+            fprintf(stderr, "ERROR: Unrecognized argument: %s\n", argv[param_counter]);
+            print_help();
+            exit(1);
+        }
+
+        param_counter++;
     }
 
     return 0;
