@@ -1,4 +1,5 @@
 /* globals.c - Single allocation of shared globals */
+#include "lseai.h"
 #include "config.h"
 #include "globals.h"
 

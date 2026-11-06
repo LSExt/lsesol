@@ -245,8 +245,7 @@ char *format_turns_for_display(const char *raw_turns_json)
                     char *formatted = format_markdown_to_ascii(ascii_text);
                     if(formatted){
         				len += snprintf(buf + len, cap - len,
-        				                "----------------------------------------\n"
-        				                "%s:\n%s\n\n",
+        				                "%s%s\n\n",
         				                tag, formatted);
                         free(formatted);
                     }
@@ -320,7 +319,7 @@ char *extract_turns_for_summary(const char *filepath, int start_turn, int count)
                 out = (char *)realloc(out, cap);
             }
 
-            len += sprintf(out + len, "%s%s\n\n", display_role, text);
+            len += sprintf(out + len, "%s: %s\n\n", display_role, text);
             extracted++;
         }
 
