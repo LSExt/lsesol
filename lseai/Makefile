@@ -67,7 +67,8 @@ COMMON_OBJS  = summarize.o \
                globals.o
 
 CLI_OBJS     = lseai.o \
-               read_prompt.o
+               read_prompt.o \
+               list_conversations.o
 
 MOTIF_OBJS   = lseai-motif.o \
                image.o 

@@ -7,7 +7,7 @@ const char *get_state_file_path(void) {
     /* const char *env_path =   g_current_conversation; */
 /*    if (env_path && strlen(env_path) > 0) {
 */
-    if (g_current_conversation && strlen(g_current_conversation) > 0) {
+    if (g_current_conversation[0] != '\0' && strlen(g_current_conversation) > 0) {
         fprintf( stderr, "current conversation %s\n", g_current_conversation);
         return g_current_conversation;
     }

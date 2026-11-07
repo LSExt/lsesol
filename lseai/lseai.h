@@ -41,6 +41,8 @@ char *extract_text_field(const char *json_resp);
 int compact_state_file(void);
 char *read_multiline_prompt(const char *title);
 char *format_markdown_to_ascii(const char *src);
+void list_conversations(const char *dir_path);
+
 /* state file */
 void init_state_file(void);
 char *read_state_file(void);

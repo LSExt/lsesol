@@ -66,7 +66,7 @@ char *send_request(const char *json_payload)
         curl_easy_setopt(s_curl, CURLOPT_TCP_KEEPINTVL, 30L);
 
 /* (Avoids sending a POST payload into a half-closed TCP pipe) */
-#ifdef LIBCURL_VERSION_NUM = 0x072400 /* 7.36.0+ */
+#if LIBCURL_VERSION_NUM >= 0x072400 /* 7.36.0+ */
         curl_easy_setopt(s_curl, CURLOPT_EXPECT_100_TIMEOUT_MS, 0L);
 #endif
 

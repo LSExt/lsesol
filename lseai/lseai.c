@@ -19,18 +19,17 @@ void set_terminal_title( const char *title){
 }
 
 
-#define LSEAI_PATH_MAX   1024
-#define LSEAI_NAME_MAX   256
 #define LSEAI_KEY_MAX    256
 
 /* --- Global CLI / Session Configuration Variables --- */
-static char config_file_path[LSEAI_PATH_MAX]    = "${HOME}/.lseaiconf";
-static char context_dir[LSEAI_PATH_MAX]         = "";
-static char context_file[LSEAI_PATH_MAX]        = "";
-static char context_name[LSEAI_NAME_MAX]        = "";
-static char attached_file_path[LSEAI_PATH_MAX]  = "";
-static char api_key[LSEAI_KEY_MAX]              = "";
-static char model_name[LSEAI_NAME_MAX]          = "";
+static char config_file_path[MAX_PATH_LEN]    = "${HOME}/.lseaiconf";
+static char context_dir[MAX_PATH_LEN]         = "";
+static char context_file[MAX_PATH_LEN]        = "";
+static char context_name[MAX_NAME_LEN]        = "";
+static char attached_file_path[MAX_PATH_LEN]  = "";
+static char api_key[LSEAI_KEY_MAX]            = "";
+static char model_name[MAX_NAME_LEN]          = "";
+static int  context_list                      = 0;
 
 static int  has_attachment                      = 0;
 static int  auto_summarize                      = 1; /* enabled by default */
@@ -61,7 +60,7 @@ static void print_help(void)
 static void expand_home_dir(char *path, size_t max_len)
 {
     const char *home = getenv("HOME");
-    char temp[LSEAI_PATH_MAX];
+    char temp[MAX_PATH_LEN];
 
     if (!path || path[0] == '\0') return;
     if (!home) home = ".";
@@ -114,8 +113,8 @@ int main(int argc, char **argv) {
     if(model_name[0] != '\0') strncpy( g_current_model, model_name, sizeof(g_current_model));
     if(context_dir[0] != '\0') strncpy(g_config.state_dir,context_dir, sizeof(g_config.state_dir));
 
-    if(context_file[0] == '\0' && context_name[0] == '\0'){
-        fprintf(stderr, "Error: You need to provide one of --context-file-path or --context-name\n");
+    if(context_file[0] == '\0' && context_name[0] == '\0' && context_list == false){
+        fprintf(stderr, "Error: You need to provide one of --context-file-path or --context-name or --list\n");
         return 1;
     }
     /* conversation was provides, build path */
@@ -124,6 +123,11 @@ int main(int argc, char **argv) {
                 "%s/%s.gemini.json", g_config.state_dir, context_name);
     }
 
+    /* list available context conversations */
+    if(context_list){
+        list_conversations(g_config.state_dir);
+        return 0;
+    }
 
     if (!api_key[0] == '\0') {
         fprintf(stderr, "Error: GEMINI_API_KEY environment variable not set.\n");
@@ -254,6 +258,11 @@ int parse_args(int argc, char *argv[])
             REQUIRE_PARAM_ARG("--context-name");
             /* Formulate <name>.gemini.json */
             snprintf(context_name, sizeof(context_name), "%s", argv[param_counter]);
+        }
+        else if (strcmp(argv[param_counter], "--list-conversations") == 0 ||
+                 strcmp(argv[param_counter], "--list") == 0 ||
+                 strcmp(argv[param_counter], "-l") == 0) {
+            context_list = true;
         }
         else if (strcmp(argv[param_counter], "--context-path") == 0) {
             REQUIRE_PARAM_ARG("--context-path");
