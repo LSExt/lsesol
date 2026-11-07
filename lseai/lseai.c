@@ -178,6 +178,7 @@ int main(int argc, char **argv) {
         int did_compact = false;
         long out_file_size = 0L;
         int do_summarize = should_auto_summarize(g_current_conversation, current_turns, &out_file_size);
+        printf( "Turns: %i, File size %ld\n", current_turns, out_file_size);
         if ( do_summarize ){
             /* Update Motif status label or cursor if available */
             printf("Status: Compacting conversation history...\n");
