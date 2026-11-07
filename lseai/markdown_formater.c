@@ -8,6 +8,8 @@
 
 #define MAX_TABLE_COLS 16
 
+#define MAKE_UPPER_BOLD 0
+
 
 static size_t format_prose_line(const char *src, size_t len, char *dst, size_t max_len)
 {
@@ -15,6 +17,38 @@ static size_t format_prose_line(const char *src, size_t len, char *dst, size_t m
     size_t out_idx = 0;
 
     while (i < len && out_idx + 4 < max_len) {
+        /* Check for markdown bold: **bold text** */
+        if (src[i] == '*' && (i + 1 < len) && src[i + 1] == '*') {
+            /* Look ahead for matching closing '**' within remaining line bounds */
+            size_t close_pos = 0;
+            for (size_t k = i + 2; k + 1 < len; k++) {
+                if (src[k] == '*' && src[k + 1] == '*') {
+                    close_pos = k;
+                    break;
+                }
+            }
+            if (close_pos != 0) {
+#if MAKE_UPPER_BOLD
+                i += 2; /* Skip opening '**' */
+                while (i < close_pos && out_idx + 1 < max_len) {
+                    dst[out_idx++] = (char)toupper((unsigned char)src[i]);
+                    i++;
+                }
+#else
+                dst[out_idx++] = '*';
+                i += 2; /* Skip opening '**' */
+                while (i < close_pos && out_idx + 1 < max_len) {
+                    dst[out_idx++] = src[i++];
+                }
+                if (out_idx + 1 < max_len) {
+                    dst[out_idx++] = '*';
+                }
+#endif
+                i += 2; /* Skip closing '**' */
+                continue;
+            }
+        }
+    
         /* Check if we are at '$' or '\' */
         if (src[i] == '$' || src[i] == '\\') {
             size_t start = i;
