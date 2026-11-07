@@ -19,6 +19,11 @@
 #define DEFAULT_MODEL "gemini-3.8-flash"
 #define BUFFER_SIZE 65536
 
+
+/* Kill switch maximums, it will stop working at this point */
+#define HARD_MAX_UNCOMPACTED_TURNS  100
+#define HARD_MAX_UNCOMPACTED_BYTES  (512 * 1024) /* 0.5 MB / 524,288 bytes */
+
 #define true 1
 #define false 0
 
@@ -52,6 +57,7 @@ int should_auto_summarize(const char *filepath, int turn_count, long *out_size);
 int perform_auto_summarization(const char *filepath, int total_turns);
 int count_conversation_turns(const char *filepath);
 int save_compacted_state_file(const char *filepath, const char *summary_text, int preserve_last_n);
+long get_file_size(const char *filepath);
 
 /* image processing */
 int write_rgb_to_jpeg_file(const char *filename, unsigned char *rgb, int width, int height, int quality);

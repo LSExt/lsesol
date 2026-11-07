@@ -180,8 +180,22 @@ int main(int argc, char **argv) {
         long out_file_size = 0L;
         int do_summarize = should_auto_summarize(g_current_conversation, current_turns, &out_file_size);
         printf( "Turns: %i, File size %ld\n", current_turns, out_file_size);
-        if(!auto_summarize){
-            printf(">>>>WARNING: auto-summarize is turned off, token usage can grow exponentialy on each turn\n");
+        if (!auto_summarize) {
+            if (do_summarize) {
+                /* High-visibility alarm when conversation has exceeded safe limits */
+                fprintf(stderr,
+                    "*******************************************************************************\n"
+                    "*** WARNING: AUTO-SUMMARIZATION IS DISABLED!                                ***\n"
+                    "*** Threshold exceeded (%3d turns, %7ld bytes).                             ***\n"
+                    "*** The ENTIRE conversation history is being resent on every request.       ***\n"
+                    "*** This will rapidly escalate API billing costs and token consumption.     ***\n"
+                    "*******************************************************************************\n",
+                    current_turns, out_file_size);
+
+            } else {
+                /* Notice while still within safe turn boundaries */
+                printf(">>> NOTICE: Auto-summarize is OFF. Full context will accumulate and impact billing.\n");
+            }
         }
         if ( do_summarize && auto_summarize){
             /* Update Motif status label or cursor if available */
@@ -191,6 +205,19 @@ int main(int argc, char **argv) {
  
             printf("Status: Conversation compacted successfully.\n");
             did_compact = true;
+
+            /* GROUND TRUTH RE-READ: Re-open the JSON file directly from disk */
+            current_turns = count_conversation_turns(g_current_conversation);
+            out_file_size = get_file_size(g_current_conversation);
+        }
+        /* KILL SWITCH */
+        if (current_turns >= HARD_MAX_UNCOMPACTED_TURNS || out_file_size >= HARD_MAX_UNCOMPACTED_BYTES) {
+            fprintf(stderr,
+                "lseai: FATAL: Circuit breaker tripped (%d turns, %ld bytes).\n"
+                "Refusing to make API call: Context exceeds safe financial limit.\n"
+                "Enable auto-summarization or prune context to continue.\n",
+                current_turns, out_file_size);
+            return -1; /* Halts execution before curl/request executes */
         }
 
         /* Load thread state and insert current prompt */

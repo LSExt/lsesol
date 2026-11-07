@@ -748,6 +748,7 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
         int do_summarize = should_auto_summarize(g_current_conversation, current_turns, &out_file_size);
         set_depth_display(current_turns, out_file_size);
         if ( do_summarize ){
+
             /* Update Motif status label or cursor if available */
             set_status_message("Status: Compacting conversation history...");
  
@@ -757,6 +758,20 @@ static void send_cb(Widget w, XtPointer client_data, XtPointer call_data)
  
             set_status_message("Status: Done compacting");
             did_compact = true;
+
+            /* GROUND TRUTH RE-READ: Re-open the JSON file directly from disk */
+            current_turns = count_conversation_turns(g_current_conversation);
+            out_file_size = get_file_size(g_current_conversation);
+            set_depth_display(current_turns, out_file_size);
+        }
+        /* KILL SWITCH, It will use the reloaded turn and size count obtained after summarize */
+        if (current_turns >= HARD_MAX_UNCOMPACTED_TURNS || out_file_size >= HARD_MAX_UNCOMPACTED_BYTES) {
+            fprintf(stderr,
+                "lseai: FATAL: Circuit breaker tripped (%d turns, %ld bytes).\n"
+                "Refusing to make API call: Context exceeds safe financial limit.\n"
+                "Enable auto-summarization or prune context to continue.\n",
+                current_turns, out_file_size);
+            exit(-1); /* Halts execution before curl/request executes */
         }
         /* Force render before the network request blocks the loop */
         force_motif_render(output_text_w);

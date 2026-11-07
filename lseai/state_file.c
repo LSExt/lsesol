@@ -94,6 +94,22 @@ void update_state_file(const char *user_prompt, const char *raw_resp_json) { cha
     if (escaped_model) free(escaped_model);
     if (model_text) free(model_text);
 }
+
+long get_file_size(const char *filepath)
+{
+    long current_size = 0;
+
+    /* 1. Gather current file size if path is valid */
+    if (filepath && filepath[0] != '\0') {
+        struct stat st;
+        if (stat(filepath, &st) == 0) {
+            current_size = (long)st.st_size;
+        } else {
+            return -1L;
+        }
+    }
+    return current_size;
+}
                
 
 /* Helper to check if file size or turns exceed g_config limits.
@@ -106,11 +122,9 @@ int should_auto_summarize(const char *filepath, int turn_count, long *out_size)
     int trigger = 0;
 
     /* 1. Gather current file size if path is valid */
-    if (filepath && filepath[0] != '\0') {
-        struct stat st;
-        if (stat(filepath, &st) == 0) {
-            current_size = (long)st.st_size;
-        }
+    current_size = get_file_size(filepath);
+    if(current_size < 0L){
+        return -1;
     }
 
     if (out_size) {
