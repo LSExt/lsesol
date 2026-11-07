@@ -9,6 +9,7 @@
 #include "lseai.h"
 #include "globals.h"
 #include "config.h"
+#include "globals.h"
 
 /* Set the terminal title when supported */
 void set_terminal_title( const char *title){
@@ -24,12 +25,12 @@ void set_terminal_title( const char *title){
 
 /* --- Global CLI / Session Configuration Variables --- */
 static char config_file_path[LSEAI_PATH_MAX]    = "${HOME}/.lseaiconf";
-static char context_dir[LSEAI_PATH_MAX]         = "${HOME}/.lseai/conversations/";
+static char context_dir[LSEAI_PATH_MAX]         = "";
 static char context_file[LSEAI_PATH_MAX]        = "";
 static char context_name[LSEAI_NAME_MAX]        = "";
 static char attached_file_path[LSEAI_PATH_MAX]  = "";
 static char api_key[LSEAI_KEY_MAX]              = "";
-static char model_name[LSEAI_NAME_MAX]          = "gemini-3.8-flash"; /* default model */
+static char model_name[LSEAI_NAME_MAX]          = "";
 
 static int  has_attachment                      = 0;
 static int  auto_summarize                      = 1; /* enabled by default */
@@ -80,15 +81,15 @@ static void expand_home_dir(char *path, size_t max_len)
 
 
 int main(int argc, char **argv) {
-/*
-    const char *api_key = getenv("GEMINI_API_KEY");
-    const char *model_name = getenv("GEMINI_MODEL");
-    const char *state_file = get_state_file_path();
-    */
-    const char *api_key;
-    const char *model_name;
+    g_current_conversation[0]='\0';
+    g_current_model[0]='\0';
+    parse_args(argc, argv);
 
-    parse_args( argc, argv );
+    if(config_file_path[0] != '\0'){
+        config_load(config_file_path);
+    } else {
+        config_load(NULL);
+    }
 
     /* Expand any paths that still have ${HOME} or ~ */
     expand_home_dir(config_file_path, sizeof(config_file_path));
@@ -96,17 +97,35 @@ int main(int argc, char **argv) {
     if (context_file[0] != '\0') {
         expand_home_dir(context_file, sizeof(context_file));
     }
+    /* TODO attached_file_path */
     if (attached_file_path[0] != '\0') {
         expand_home_dir(attached_file_path, sizeof(attached_file_path));
     }
 
-    if (!model_name) {
-        model_name = DEFAULT_MODEL;
+
+    if(g_config.default_model) strncpy(g_current_model, g_config.default_model, sizeof(g_current_model));
+    /* explicit parameters override config value if any */
+
+    /* load default values */
+    strncpy( g_current_model, "gemini-3.8-flash", sizeof(g_current_model));
+
+
+    if(context_file[0] != '\0') strncpy(g_current_conversation, context_file, sizeof( g_current_conversation));
+    if(model_name[0] != '\0') strncpy( g_current_model, model_name, sizeof(g_current_model));
+    if(context_dir[0] != '\0') strncpy(g_config.state_dir,context_dir, sizeof(g_config.state_dir));
+
+    if(context_file[0] == '\0' && context_name[0] == '\0'){
+        fprintf(stderr, "Error: You need to provide one of --context-file-path or --context-name\n");
+        return 1;
+    }
+    /* conversation was provides, build path */
+    if(context_name[0] != '\0'){
+        snprintf(g_current_conversation, sizeof(g_current_conversation),
+                "%s/%s.gemini.json", g_config.state_dir, context_name);
     }
 
-    set_terminal_title( g_current_conversation);
 
-    if (!api_key) {
+    if (!api_key[0] == '\0') {
         fprintf(stderr, "Error: GEMINI_API_KEY environment variable not set.\n");
         fprintf(stderr, "Run: export GEMINI_API_KEY=\"your_key_here\"\n");
         return 1;
@@ -234,7 +253,7 @@ int parse_args(int argc, char *argv[])
         else if (strcmp(argv[param_counter], "--context-name") == 0) {
             REQUIRE_PARAM_ARG("--context-name");
             /* Formulate <name>.gemini.json */
-            snprintf(context_name, sizeof(context_name), "%s.gemini.json", argv[param_counter]);
+            snprintf(context_name, sizeof(context_name), "%s", argv[param_counter]);
         }
         else if (strcmp(argv[param_counter], "--context-path") == 0) {
             REQUIRE_PARAM_ARG("--context-path");

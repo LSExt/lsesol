@@ -47,7 +47,7 @@ static void set_default_config(void)
             sizeof(g_config.api_endpoint_base) - 1);
 
     g_config.model_count = 0;
-    strncpy(g_config.models[g_config.model_count++], "gemini-2.5-flash", MAX_NAME_LEN - 1);
+    strncpy(g_config.models[g_config.model_count++], "gemini-3.8-flash", MAX_NAME_LEN - 1);
     strncpy(g_config.models[g_config.model_count++], "gemini-1.5-pro", MAX_NAME_LEN - 1);
 
     /* Auto-summarize defaults */

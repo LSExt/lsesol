@@ -6,8 +6,6 @@
  */
 
 #include "lseai.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <Xm/Xm.h>
 #include <Xm/MainW.h>
 #include <Xm/CascadeB.h>
@@ -22,11 +20,8 @@
 #include <Xm/MessageB.h>    /* XmCreateQuestionDialog, XmCreateWarningDialog, etc. */
 #include <Xm/SelectioB.h>   /* XmCreatePromptDialog */
 #include <X11/cursorfont.h> /* XC_crosshair */
-#include "config.h"
 #include "globals.h"
-#if defined(SOLARIS2) || defined(__solaris__) || defined(__SVR4)
-#include "libgen.h"
-#endif
+#include "config.h"
 
 
 /* Global widget handles needed for backend hooks */
@@ -865,7 +860,6 @@ static void model_select_cb(Widget w, XtPointer client_data, XtPointer call_data
 
 void select_first_conversation(void)
 {
-    config_load(NULL);
     strncpy(g_current_model, g_config.default_model, sizeof(g_current_model) - 1);
     g_current_model[sizeof(g_current_model) - 1] = '\0';
 
@@ -1469,6 +1463,8 @@ int main(int argc, char *argv[])
 
     Arg args[20];
     int n;
+
+    config_load(NULL);
 
     select_first_conversation(); 
 

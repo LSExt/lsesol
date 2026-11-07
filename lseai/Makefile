@@ -8,7 +8,7 @@ CC           = gcc
 # Compiler Flags
 # -------------------------------------------------------------
 # Flags for standard C files (strict warnings + C99)
-CFLAGS       = -g -std=gnu99 -Wall -D__EXTENSIONS__ -include $(PREFIX)/include/lsecompat.h -I$(PREFIX)/include
+CFLAGS       = -g -O2 -std=gnu99 -Wall -D__EXTENSIONS__ -include $(PREFIX)/include/lsecompat.h -I$(PREFIX)/include
 
 # Flags for Motif/X11 C files (silences SunOS X11 header noise)
 MOTIF_CFLAGS = -g -O2 -include $(PREFIX)/include/lsecompat.h \

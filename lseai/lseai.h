@@ -8,6 +8,9 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(SOLARIS2) || defined(__solaris__) || defined(__SVR4)
+#include "libgen.h"
+#endif
 #include <curl/curl.h>
 #include <readline/readline.h>
 #include <readline/history.h>
