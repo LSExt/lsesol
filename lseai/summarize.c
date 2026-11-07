@@ -1,4 +1,5 @@
 #include "lseai.h"
+#include "globals.h"
 
 /*
  * Step 1: Send text to the Gemini API and extract the summary.
@@ -91,19 +92,25 @@ int save_compacted_state_file(const char *filepath, const char *summary_text, in
     char *preserved_tail = NULL;
     if (preserve_last_n > 0) {
         int total_turns = count_conversation_turns(filepath);
-        printf("[DEBUG] Pre-compaction Turns: %d\n", total_turns);
+        if(g_verbose){
+            printf("[DEBUG] Pre-compaction Turns: %d\n", total_turns);
+        }
 
         if (total_turns > preserve_last_n) {
             int start_idx = total_turns - preserve_last_n;
-            printf("[DEBUG] Calling extract_raw_turns_json(start_idx=%d, count=%d)\n",
+            if(g_verbose){
+                printf("[DEBUG] Calling extract_raw_turns_json(start_idx=%d, count=%d)\n",
                    start_idx, preserve_last_n);
+            }
 
             preserved_tail = extract_raw_turns_json(filepath, start_idx, preserve_last_n);
 
             if (!preserved_tail) {
                 fprintf(stderr, "[DEBUG WARNING] extract_raw_turns_json returned NULL! Recent turns will NOT be preserved.\n");
             } else {
-                printf("[DEBUG] Extracted preserved tail: %lu bytes\n", (unsigned long)strlen(preserved_tail));
+                if(g_verbose){
+                    printf("[DEBUG] Extracted preserved tail: %lu bytes\n", (unsigned long)strlen(preserved_tail));
+                }
                 /* Print first 80 characters of tail to verify JSON integrity */
                 char preview[81];
                 strncpy(preview, preserved_tail, 80);
@@ -111,15 +118,23 @@ int save_compacted_state_file(const char *filepath, const char *summary_text, in
                 printf("[DEBUG] Tail preview: [%s...]\n", preview);
             }
         } else {
-            printf("[DEBUG] total_turns (%d) <= preserve_last_n (%d), skipping tail extraction\n",
-                   total_turns, preserve_last_n);
+            if(g_verbose){
+                printf("[DEBUG] total_turns (%d) <= preserve_last_n (%d), skipping tail extraction\n",
+                    total_turns, preserve_last_n);
+            }
         }
     }
 
-    printf("[DEBUG] Opening file for overwrite: %s\n", filepath);
-    FILE *f = fopen(filepath, "w");
+    char tmp_filepath[1024];
+    snprintf(tmp_filepath, sizeof(tmp_filepath), "%s.tmp.%ld", filepath, (long)getpid());
+
+    if (g_verbose) {
+        printf("[DEBUG] Opening temp file for atomic write: %s\n", tmp_filepath);
+    }
+
+    FILE *f = fopen(tmp_filepath, "w");
     if (!f) {
-        perror("[DEBUG ERROR] Failed to open file for writing");
+        perror("[ERROR] Failed to open temp file for writing");
         free(escaped_summary);
         if (preserved_tail) free(preserved_tail);
         return -1;
@@ -130,25 +145,52 @@ int save_compacted_state_file(const char *filepath, const char *summary_text, in
                         "{\"role\":\"user\",\"parts\":[{\"text\":\"SYSTEM CONTEXT / PRIOR DISCUSSION SUMMARY:\\n%s\"}]},"
                         "{\"role\":\"model\",\"parts\":[{\"text\":\"Understood. Context saved.\"}]}",
                      escaped_summary);
-    printf("[DEBUG] Wrote baseline context: %d bytes\n", w1);
+    if (g_verbose) {
+        printf("[DEBUG] Wrote baseline context: %d bytes\n", w1);
+    }
 
     /* Append preserved recent turns if available */
     if (preserved_tail && strlen(preserved_tail) > 0) {
         int w2 = fprintf(f, ",%s", preserved_tail);
-        printf("[DEBUG] Appended preserved tail: %d bytes\n", w2);
+        if (g_verbose) {
+            printf("[DEBUG] Appended preserved tail: %d bytes\n", w2);
+        }
         free(preserved_tail);
+        preserved_tail = NULL;
     }
 
     int w3 = fprintf(f, "]}");
-    printf("[DEBUG] Wrote closing brackets: %d bytes\n", w3);
+    if (g_verbose) {
+        printf("[DEBUG] Wrote closing brackets: %d bytes\n", w3);
+    }
 
+    /* Ensure buffers are flushed to disk before atomic rename */
+    fflush(f);
+    int fd = fileno(f);
+    if (fd >= 0) {
+        fsync(fd);
+    }
     fclose(f);
+
+    /* Atomic swap: overwrites destination filepath instantaneously */
+    if (rename(tmp_filepath, filepath) != 0) {
+        perror("[ERROR] Failed to atomically replace context file");
+        unlink(tmp_filepath);
+        free(escaped_summary);
+        return -1;
+    }
+
+    if (g_verbose) {
+        printf("[DEBUG] Atomically renamed %s -> %s\n", tmp_filepath, filepath);
+    }
     free(escaped_summary);
 
     /* Verification step: reread disk to confirm turn count */
     int new_turns = count_conversation_turns(filepath);
-    printf("[DEBUG] Post-compaction Verification: file now has %d turns on disk\n", new_turns);
-    printf("=== [DEBUG save_compacted_state_file END (SUCCESS)] ===\n\n");
+    if(g_verbose){
+        printf("[DEBUG] Post-compaction Verification: file now has %d turns on disk\n", new_turns);
+        printf("=== [DEBUG save_compacted_state_file END (SUCCESS)] ===\n\n");
+    }
 
     return 0;
 }

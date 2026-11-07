@@ -50,6 +50,7 @@ static void print_help(void)
     printf("  --api-key <key|ENV:var>     API key literal or environment variable reference\n");
     printf("  --model <model>             Model name (overrides config)\n");
     printf("  --no-auto-summarize         Disable automatic session summarization\n");
+    printf("  --verbose                   Print debuging information\n");
     printf("  --help, -h                  Display this help message and exit\n\n");
 }
 
@@ -179,13 +180,16 @@ int main(int argc, char **argv) {
         long out_file_size = 0L;
         int do_summarize = should_auto_summarize(g_current_conversation, current_turns, &out_file_size);
         printf( "Turns: %i, File size %ld\n", current_turns, out_file_size);
-        if ( do_summarize ){
+        if(!auto_summarize){
+            printf(">>>>WARNING: auto-summarize is turned off, token usage can grow exponentialy on each turn\n");
+        }
+        if ( do_summarize && auto_summarize){
             /* Update Motif status label or cursor if available */
             printf("Status: Compacting conversation history...\n");
  
             perform_auto_summarization(g_current_conversation, current_turns);
  
-            printf("Status: Done compacting\n");
+            printf("Status: Conversation compacted successfully.\n");
             did_compact = true;
         }
 
@@ -312,6 +316,10 @@ int parse_args(int argc, char *argv[])
         }
         else if (strcmp(argv[param_counter], "--no-auto-summarize") == 0) {
             auto_summarize = 0;
+        }
+        else if (strcmp(argv[param_counter], "--verbose") == 0 || strcmp(argv[param_counter], "-v") == 0) {
+            g_verbose = 1;
+            exit(0);
         }
         else if (strcmp(argv[param_counter], "--help") == 0 || strcmp(argv[param_counter], "-h") == 0) {
             print_help();

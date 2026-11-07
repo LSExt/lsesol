@@ -7,6 +7,7 @@ int g_turn_count = 0;
 char g_current_model[MAX_NAME_LEN] = "gemini-3.8-flash";
 int conv_count = 0;
 char g_current_conversation[1024] = "";
+int g_verbose = 0;
 
 
 char **g_files_to_attach = NULL;

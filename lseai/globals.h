@@ -11,6 +11,8 @@ extern lseai_config_t g_config;
 extern char **g_files_to_attach;
 extern int    g_num_attachments;
 
+extern int g_verbose;
+
 void add_attachment(const char *filepath);
 void clear_attachments(void);
 
