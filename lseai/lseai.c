@@ -173,6 +173,21 @@ int main(int argc, char **argv) {
             continue;
         }
 
+        /* Trigger auto-summarization if thresholds are exceeded */
+        int current_turns = count_conversation_turns(g_current_conversation);
+        int did_compact = false;
+        long out_file_size = 0L;
+        int do_summarize = should_auto_summarize(g_current_conversation, current_turns, &out_file_size);
+        if ( do_summarize ){
+            /* Update Motif status label or cursor if available */
+            printf("Status: Compacting conversation history...\n");
+ 
+            perform_auto_summarization(g_current_conversation, current_turns);
+ 
+            printf("Status: Done compacting\n");
+            did_compact = true;
+        }
+
         /* Load thread state and insert current prompt */
         char *current_state = read_state_file();
         if (!current_state) {
@@ -199,6 +214,8 @@ int main(int argc, char **argv) {
 
         sprintf(full_payload, "%s%s{\"role\":\"user\",\"parts\":[{\"text\":\"%s\"}]}]}",
                 current_state, (has_entries ? "," : ""), escaped_prompt ? escaped_prompt : "");
+
+
 
         printf("Thinking...\n");
         char *response_json = send_request(full_payload);
