@@ -45,6 +45,7 @@ static void print_help(void)
     printf("  --context-file-path <path>  Explicit path to a chat JSON file\n");
     printf("  --context-name <name>       Chat session name (<name>.gemini.json)\n");
     printf("  --context-path <dir>        Directory storing conversations\n");
+    printf("  --list, -l                  List available conversations\n");
     printf("  --attach-file <file>        Attach a file (image/audio/text) to first request\n");
     printf("  --api-key <key|ENV:var>     API key literal or environment variable reference\n");
     printf("  --model <model>             Model name (overrides config)\n");
