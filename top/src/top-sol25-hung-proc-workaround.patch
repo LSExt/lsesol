@@ -12,7 +12,7 @@ diff -ruN top-3.8beta1/display.c top-3.8beta1-hung-fix/display.c
      else
 Binary files top-3.8beta1/machine/.m_sunos5.c.swp and top-3.8beta1-hung-fix/machine/.m_sunos5.c.swp differ
 diff -ruN top-3.8beta1/machine/m_sunos5.c top-3.8beta1-hung-fix/machine/m_sunos5.c
---- top-3.8beta1/machine/m_sunos5.c	2026-11-13 18:50:39.126763000 +0000
+--- top-3.8beta1/machine/m_sunos5.c	2026-11-13 19:13:48.696012000 +0000
 +++ top-3.8beta1-hung-fix/machine/m_sunos5.c	2026-11-13 18:46:27.095210000 +0000
 @@ -98,6 +98,11 @@
  #include "utils.h"
@@ -98,8 +98,8 @@ diff -ruN top-3.8beta1/machine/m_sunos5.c top-3.8beta1-hung-fix/machine/m_sunos5
 +        _exit(1);
 +    }
 +
-+    /* PARENT: Poll waitpid with WNOHANG up to ~30ms */
-+    for (attempts = 0; attempts < 3; attempts++) {
++    /* PARENT: Poll waitpid with WNOHANG up to ~150ms */
++    for (attempts = 0; attempts < 15; attempts++) {
 +        pid_t ret = waitpid(child, &status, WNOHANG);
 +        if (ret == child) {
 +            /* Child completed: PID is safe to open */
