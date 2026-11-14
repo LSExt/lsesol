@@ -11,9 +11,12 @@ pkgver=2
 source[0]=http://www.unixtop.org/dist/$topdir-$version.tar.bz2
 # If there are no patches, simply comment this
 patch[0]=revert-ioctl-procfs-sol25.patch
+patch[0]=top-sol25-hung-proc-workaround.patch
 
 # Source function library
 . ${BUILDPKG_SCRIPTS}/buildpkg.functions
+
+export CPPFLAGS="$CPPFLAGS -DMULTIPROCESSOR"
 
 reg prep
 prep()
